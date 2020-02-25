@@ -7,6 +7,23 @@ extern crate tokio;
 
 use std::env;
 use tokio::prelude::*;
+use mariadb_proxy::packet::Packet;
+use mariadb_proxy::packet_handler::PacketHandler;
+
+struct PassthroughHandler {}
+
+// Just forward the packet
+impl PacketHandler for PassthroughHandler {
+
+  fn handle_request(&mut self, p: &Packet) -> Packet {
+    Packet { bytes: p.bytes.clone() }
+  }
+
+  fn handle_response(&mut self, p: &Packet) -> Packet {
+    Packet { bytes: p.bytes.clone() }
+  }
+
+}
 
 #[tokio::main]
 async fn main() {
@@ -20,7 +37,8 @@ async fn main() {
   let db_addr = env::args().nth(2).unwrap_or("127.0.0.1:3306".to_string());
 
   let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
+  let handler = PassthroughHandler{};
   info!("Proxy listening on: {}", bind_addr);
-  server.run().await;
+  server.run(&handler).await;
 
 }
