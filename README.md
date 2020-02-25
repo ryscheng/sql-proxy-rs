@@ -9,5 +9,5 @@ Programmable MariaDB Proxy for Rust
 This example just prints what's going through the proxy
 
 ```bash
-$ cargo run --example passthrough
+$ RUST_LOG=info cargo run --example passthrough
 ```
