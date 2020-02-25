@@ -1,5 +1,6 @@
 
 use std::sync::{Arc, Mutex};
+use futures::join;
 use futures::stream::StreamExt;
 use tokio::net::{TcpListener, TcpStream};
 
@@ -42,6 +43,9 @@ impl Server {
               reader: server_socket.clone(),
               writer: client_socket.clone(),
             };
+
+            //join!(forward_pipe.run(), backward_pipe.run());
+            info!("Closing connection from {:?}", client_socket.peer_addr());
 
             //match tokio::io::copy(&mut client_reader, &mut client_writer).await {
             //  Ok(amt) => {

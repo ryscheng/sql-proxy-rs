@@ -11,5 +11,6 @@ pub struct Pipe {
 }
 
 impl Pipe {
-  
+  pub async fn run(&self) {
+  }
 }
