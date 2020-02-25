@@ -37,8 +37,8 @@ async fn main() {
   let db_addr = env::args().nth(2).unwrap_or("127.0.0.1:3306".to_string());
 
   let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
-  let handler = PassthroughHandler{};
   info!("Proxy listening on: {}", bind_addr);
+  let handler = PassthroughHandler{};
   server.run(&handler).await;
 
 }
