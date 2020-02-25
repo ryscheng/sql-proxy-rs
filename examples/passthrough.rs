@@ -6,9 +6,10 @@ extern crate futures;
 extern crate tokio;
 
 use std::env;
+use std::sync::{Arc, Mutex};
 use tokio::prelude::*;
 use mariadb_proxy::packet::Packet;
-use mariadb_proxy::packet_handler::PacketHandler;
+use mariadb_proxy::packet_handler::{PacketHandler};
 
 struct PassthroughHandler {}
 
@@ -38,7 +39,5 @@ async fn main() {
 
   let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
   info!("Proxy listening on: {}", bind_addr);
-  let handler = PassthroughHandler{};
-  server.run(&handler).await;
-
+  server.run(PassthroughHandler {}).await;
 }

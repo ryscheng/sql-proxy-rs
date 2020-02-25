@@ -1,8 +1,10 @@
 
+use std::sync::{Arc, Mutex};
 use futures::stream::StreamExt;
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::packet_handler::PacketHandler;
+use crate::packet_handler::{PacketHandler};
+use crate::pipe::Pipe;
 
 #[derive(Debug)]
 pub struct Server {
@@ -18,25 +20,37 @@ impl Server {
     }
   }
 
-  pub async fn run(&mut self, packet_handler: &PacketHandler) {
+  pub async fn run<T: PacketHandler+Send+Sync+'static>(&mut self, packet_handler: T) {
+    let packet_handler = Arc::new(Mutex::new(packet_handler));
     let mut incoming = self.listener.incoming();
     while let Some(conn) = incoming.next().await {
       match conn {
         Ok(mut client_socket) => {
           info!("Accepted connection from {:?}", client_socket.peer_addr());
           let db_addr = self.db_addr.clone();
+          let handler_ref = packet_handler.clone();
           tokio::spawn(async move {
-            let (mut client_reader, mut client_writer) = client_socket.split();
-            let (mut server_reader, mut server_writer) = TcpStream::connect(db_addr).await.unwrap().split();
+            let client_socket = Arc::new(client_socket);
+            let server_socket = Arc::new(TcpStream::connect(db_addr).await.unwrap());
+            let forward_pipe = Pipe {
+              packet_handler: handler_ref.clone(),
+              reader: client_socket.clone(),
+              writer: server_socket.clone(),
+            };
+            let backward_pipe = Pipe {
+              packet_handler: handler_ref.clone(),
+              reader: server_socket.clone(),
+              writer: client_socket.clone(),
+            };
 
-            match tokio::io::copy(&mut client_reader, &mut client_writer).await {
-              Ok(amt) => {
-                println!("wrote {} bytes", amt);
-              }
-              Err(err) => {
-                eprintln!("IO error {:?}", err);
-              }
-            }
+            //match tokio::io::copy(&mut client_reader, &mut client_writer).await {
+            //  Ok(amt) => {
+            //    println!("wrote {} bytes", amt);
+            //  }
+            //  Err(err) => {
+            //    eprintln!("IO error {:?}", err);
+            //  }
+            //}
           });
         }
         Err(err) => {
