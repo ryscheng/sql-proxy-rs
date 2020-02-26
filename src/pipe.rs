@@ -1,7 +1,7 @@
 
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpStream};
-use tokio::io::{AsyncReadExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::packet::Packet;
 use crate::packet_handler::{Direction, PacketHandler};
 
@@ -32,6 +32,7 @@ impl Pipe {
 
   pub async fn run(&mut self) {
     let mut source = Arc::get_mut(&mut self.source).unwrap();
+    let mut sink = Arc::get_mut(&mut self.sink).unwrap();
     let mut read_buf: Vec<u8> = vec![0_u8; 4096];
     let mut packet_buf: Vec<u8> = Vec::with_capacity(4096);
     let mut write_buf: Vec<u8> = Vec::with_capacity(4096);
@@ -57,12 +58,26 @@ impl Pipe {
       // Process all packets in packet_buf, put into write_buf
       while let Some(packet) = get_packet(&mut packet_buf) {
         trace!("Processing packet");
-
+        { // Scope for self.packet_handler Mutex
+          let mut h = self.packet_handler.lock().unwrap();
+          let transformed_packet = match self.direction {
+            Direction::Forward => h.handle_request(&packet),
+            Direction::Backward => h.handle_response(&packet),
+          };
+          write_buf.extend_from_slice(&transformed_packet.bytes);
+        }
       }
-
-
       
-      // Write to sink
+      // Write all to sink
+      let n = sink.write(&write_buf[..]).await;
+      let n = match n {
+        Ok(size) => size,
+        Err(error) => {
+          error!("Error writing to {}, closing pipe: {}", self.name, error);
+          return;
+        }
+      };
+      let _ : Vec<u8> = write_buf.drain(0..n).collect();
 
       //return;
     }
