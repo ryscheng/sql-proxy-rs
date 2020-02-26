@@ -33,20 +33,11 @@ impl Server {
           tokio::spawn(async move {
             let client_socket = Arc::new(client_socket);
             let server_socket = Arc::new(TcpStream::connect(db_addr).await.unwrap());
-            let forward_pipe = Pipe {
-              packet_handler: handler_ref.clone(),
-              reader: client_socket.clone(),
-              writer: server_socket.clone(),
-            };
-            let backward_pipe = Pipe {
-              packet_handler: handler_ref.clone(),
-              reader: server_socket.clone(),
-              writer: client_socket.clone(),
-            };
+            let forward_pipe = Pipe::new(handler_ref.clone(), client_socket.clone(), server_socket.clone());
+            let backward_pipe = Pipe::new(handler_ref.clone(), server_socket.clone(), client_socket.clone());
 
             join!(forward_pipe.run(), backward_pipe.run());
             info!("Closing connection from {:?}", client_socket.peer_addr());
-
             //match tokio::io::copy(&mut client_reader, &mut client_writer).await {
             //  Ok(amt) => {
             //    println!("wrote {} bytes", amt);
