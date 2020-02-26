@@ -6,8 +6,6 @@ extern crate futures;
 extern crate tokio;
 
 use std::env;
-use std::sync::{Arc, Mutex};
-use tokio::prelude::*;
 use mariadb_proxy::packet::Packet;
 use mariadb_proxy::packet_handler::{PacketHandler};
 

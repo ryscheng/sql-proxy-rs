@@ -1,7 +1,8 @@
 
+use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
 use crate::packet::Packet;
 use crate::packet_handler::{Direction, PacketHandler};
 
@@ -30,27 +31,20 @@ impl Pipe {
     }
   }
 
-  pub async fn run(&mut self) {
-    let mut source = Arc::get_mut(&mut self.source).unwrap();
-    let mut sink = Arc::get_mut(&mut self.sink).unwrap();
+  pub async fn run(&mut self) -> Result<()> {
+    let source = Arc::get_mut(&mut self.source).unwrap();
+    let sink = Arc::get_mut(&mut self.sink).unwrap();
     let mut read_buf: Vec<u8> = vec![0_u8; 4096];
     let mut packet_buf: Vec<u8> = Vec::with_capacity(4096);
     let mut write_buf: Vec<u8> = Vec::with_capacity(4096);
 
     loop {
       // Read from the source to read_buf, append to packet_buf
-      let n = source.read(&mut read_buf[..]).await;
-      let n = match n {
-        Ok(size) => size,
-        Err(error) => {
-          error!("Error reading from {}, closing pipe: {}", self.name, error);
-          return;
-        }
-      };
-
+      let n = source.read(&mut read_buf[..]).await?;
       if n <= 0 {
-        error!("Read {} bytes from {}, closing pipe.", n, self.name);
-        return;
+        let e = Error::new(ErrorKind::Other, format!("Read {} bytes from {}, closing pipe.", n, self.name));
+        error!("{}", e.to_string());
+        return Err(e);
       }
       trace!("{} bytes read", n);
       packet_buf.extend_from_slice(&read_buf[0..n]);
@@ -69,18 +63,10 @@ impl Pipe {
       }
       
       // Write all to sink
-      let n = sink.write(&write_buf[..]).await;
-      let n = match n {
-        Ok(size) => size,
-        Err(error) => {
-          error!("Error writing to {}, closing pipe: {}", self.name, error);
-          return;
-        }
-      };
+      let n = sink.write(&write_buf[..]).await?;
       let _ : Vec<u8> = write_buf.drain(0..n).collect();
+    } // end loop
 
-      //return;
-    }
   }
 
 }

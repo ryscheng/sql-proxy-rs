@@ -1,6 +1,6 @@
 
 use std::sync::{Arc, Mutex};
-use futures::join;
+use futures::try_join;
 use futures::stream::StreamExt;
 use tokio::net::{TcpListener, TcpStream};
 
@@ -25,7 +25,7 @@ impl Server {
     let packet_handler = Arc::new(Mutex::new(packet_handler));
     let mut incoming = self.listener.incoming();
     while let Some(conn) = incoming.next().await {
-      match conn {
+      let _ = match conn {
         Ok(client_socket) => {
           info!("Accepted connection from {:?}", client_socket.peer_addr());
           let db_addr = self.db_addr.clone();
@@ -35,26 +35,19 @@ impl Server {
             let server_socket = Arc::new(TcpStream::connect(db_addr).await.unwrap());
             let mut forward_pipe = Pipe::new(String::from("forward"), handler_ref.clone(), Direction::Forward, client_socket.clone(), server_socket.clone());
             let mut backward_pipe = Pipe::new(String::from("backward"), handler_ref.clone(), Direction::Backward, server_socket.clone(), client_socket.clone());
-
-            join!(forward_pipe.run(), backward_pipe.run());
+            let _ = match try_join!(forward_pipe.run(), backward_pipe.run()) {
+              Ok(((),())) => { trace!("Pipe closed successfully"); },
+              Err(e) => { error!("Pipe closed with error: {}", e); },
+            };
             info!("Closing connection from {:?}", client_socket.peer_addr());
-            //match tokio::io::copy(&mut client_reader, &mut client_writer).await {
-            //  Ok(amt) => {
-            //    println!("wrote {} bytes", amt);
-            //  }
-            //  Err(err) => {
-            //    eprintln!("IO error {:?}", err);
-            //  }
-            //}
           });
         }
         Err(err) => {
             // Handle error by printing to STDOUT.
             error!("accept error = {:?}", err);
         }
-      }
+      };
     }
-
-
+    info!("Server run() complete");
   }
 }
