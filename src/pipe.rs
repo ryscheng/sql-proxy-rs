@@ -5,7 +5,7 @@ use tokio::net::{TcpStream};
 use crate::packet_handler::PacketHandler;
 
 pub struct Pipe {
-  pub packet_handler: Arc<Mutex<PacketHandler>>,
+  pub packet_handler: Arc<Mutex<dyn PacketHandler+Send>>,
   pub reader: Arc<TcpStream>,
   pub writer: Arc<TcpStream>,
 }

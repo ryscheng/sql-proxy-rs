@@ -44,7 +44,7 @@ impl Server {
               writer: client_socket.clone(),
             };
 
-            //join!(forward_pipe.run(), backward_pipe.run());
+            join!(forward_pipe.run(), backward_pipe.run());
             info!("Closing connection from {:?}", client_socket.peer_addr());
 
             //match tokio::io::copy(&mut client_reader, &mut client_writer).await {
