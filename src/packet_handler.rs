@@ -1,5 +1,4 @@
 
-use std::sync::{Arc, Mutex};
 use crate::packet::Packet;
 
 /// Packet handlers need to implement this trait

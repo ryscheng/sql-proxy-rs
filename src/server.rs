@@ -26,15 +26,15 @@ impl Server {
     let mut incoming = self.listener.incoming();
     while let Some(conn) = incoming.next().await {
       match conn {
-        Ok(mut client_socket) => {
+        Ok(client_socket) => {
           info!("Accepted connection from {:?}", client_socket.peer_addr());
           let db_addr = self.db_addr.clone();
           let handler_ref = packet_handler.clone();
           tokio::spawn(async move {
             let client_socket = Arc::new(client_socket);
             let server_socket = Arc::new(TcpStream::connect(db_addr).await.unwrap());
-            let forward_pipe = Pipe::new(handler_ref.clone(), client_socket.clone(), server_socket.clone());
-            let backward_pipe = Pipe::new(handler_ref.clone(), server_socket.clone(), client_socket.clone());
+            let mut forward_pipe = Pipe::new(String::from("forward"), handler_ref.clone(), client_socket.clone(), server_socket.clone());
+            let mut backward_pipe = Pipe::new(String::from("backward"), handler_ref.clone(), server_socket.clone(), client_socket.clone());
 
             join!(forward_pipe.run(), backward_pipe.run());
             info!("Closing connection from {:?}", client_socket.peer_addr());

@@ -1,5 +1,5 @@
 
-use std::io::{self, Read, Write, Error, ErrorKind};
+use std::io::{Error, ErrorKind};
 use byteorder::{LittleEndian, WriteBytesExt};
 
 /// A packet is just a wrapper for a Vec<u8>
