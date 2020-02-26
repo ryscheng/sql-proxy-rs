@@ -4,7 +4,7 @@ use futures::join;
 use futures::stream::StreamExt;
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::packet_handler::{PacketHandler};
+use crate::packet_handler::{Direction, PacketHandler};
 use crate::pipe::Pipe;
 
 #[derive(Debug)]
@@ -33,8 +33,8 @@ impl Server {
           tokio::spawn(async move {
             let client_socket = Arc::new(client_socket);
             let server_socket = Arc::new(TcpStream::connect(db_addr).await.unwrap());
-            let mut forward_pipe = Pipe::new(String::from("forward"), handler_ref.clone(), client_socket.clone(), server_socket.clone());
-            let mut backward_pipe = Pipe::new(String::from("backward"), handler_ref.clone(), server_socket.clone(), client_socket.clone());
+            let mut forward_pipe = Pipe::new(String::from("forward"), handler_ref.clone(), Direction::Forward, client_socket.clone(), server_socket.clone());
+            let mut backward_pipe = Pipe::new(String::from("backward"), handler_ref.clone(), Direction::Backward, server_socket.clone(), client_socket.clone());
 
             join!(forward_pipe.run(), backward_pipe.run());
             info!("Closing connection from {:?}", client_socket.peer_addr());
