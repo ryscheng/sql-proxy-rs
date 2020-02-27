@@ -3,6 +3,7 @@ use std::io::{Error, ErrorKind};
 use byteorder::{LittleEndian, WriteBytesExt};
 
 /// A packet is just a wrapper for a Vec<u8>
+/// For reference, see https://dev.mysql.com/doc/internals/en/mysql-packet.html
 #[derive(Debug,PartialEq)]
 pub struct Packet {
   pub bytes: Vec<u8>
