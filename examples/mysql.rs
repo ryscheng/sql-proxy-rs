@@ -52,8 +52,6 @@ async fn insert() -> Result<(), mysql_async::error::Error> {
     // Load payments from database.
     let result = conn.prep_exec("SELECT customer_id, amount, account_name FROM payment", ()).await?;
 
-    // info!("CREATE TABLE {}", );
-
     // Collect payments
     let (_ /* conn */, loaded_payments) = result.map_and_drop(|row| {
         let (customer_id, amount, account_name) = mysql_async::from_row(row);
@@ -79,6 +77,6 @@ async fn insert() -> Result<(), mysql_async::error::Error> {
 async fn main() {
   env_logger::init();
 
-  info!("Passthrough MariaDB proxy... ");
+  info!("MySQL driver demo... ");
   insert().await.unwrap();
 }
