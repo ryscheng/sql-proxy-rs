@@ -1,27 +1,26 @@
 
 use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
-use tokio::net::{TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
 use crate::packet::Packet;
 use crate::packet_handler::{Direction, PacketHandler};
 
-pub struct Pipe {
+pub struct Pipe<T: AsyncReadExt, U: AsyncWriteExt> {
   name: String,
   packet_handler: Arc<Mutex<dyn PacketHandler+Send>>,
   direction: Direction,
-  source: Arc<TcpStream>,
-  sink: Arc<TcpStream>,
+  source: T,
+  sink: U,
 }
 
-impl Pipe {
+impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
 
   pub fn new(
       name: String,
       packet_handler: Arc<Mutex<dyn PacketHandler+Send>>,
       direction: Direction,
-      reader: Arc<TcpStream>,
-      writer: Arc<TcpStream>) -> Pipe {
+      reader: T,
+      writer: U) -> Pipe<T, U> {
     Pipe {
       name: name,
       packet_handler: packet_handler,
@@ -32,15 +31,17 @@ impl Pipe {
   }
 
   pub async fn run(&mut self) -> Result<()> {
-    let source = Arc::get_mut(&mut self.source).unwrap();
-    let sink = Arc::get_mut(&mut self.sink).unwrap();
+    trace!("[{}]: Running {:?} pipe loop...", self.name, self.direction);
+    //let source = Arc::get_mut(&mut self.source).unwrap();
+    //let sink = Arc::get_mut(&mut self.sink).unwrap();
     let mut read_buf: Vec<u8> = vec![0_u8; 4096];
     let mut packet_buf: Vec<u8> = Vec::with_capacity(4096);
     let mut write_buf: Vec<u8> = Vec::with_capacity(4096);
 
     loop {
       // Read from the source to read_buf, append to packet_buf
-      let n = source.read(&mut read_buf[..]).await?;
+      let n = self.source.read(&mut read_buf[..]).await?;
+      trace!("[{}]: Read {} bytes from client", self.name, n);
       if n <= 0 {
         let e = Error::new(ErrorKind::Other, format!("Read {} bytes from {}, closing pipe.", n, self.name));
         error!("{}", e.to_string());
@@ -63,7 +64,7 @@ impl Pipe {
       }
       
       // Write all to sink
-      let n = sink.write(&write_buf[..]).await?;
+      let n = self.sink.write(&write_buf[..]).await?;
       let _ : Vec<u8> = write_buf.drain(0..n).collect();
     } // end loop
 

@@ -1,6 +1,7 @@
 
 use crate::packet::Packet;
 
+#[derive(Debug)]
 pub enum Direction{
     Forward,  // corresponds to handle_request
     Backward, // corresponds to handle_response
