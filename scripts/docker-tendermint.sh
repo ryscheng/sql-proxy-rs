@@ -12,5 +12,5 @@ docker run --rm -it \
   --network devnet \
   -v "/tmp/tendermint:/tendermint" \
   --name tendermint \
-  tendermint/tendermint node --proxy_app=tcp://abci:26658
+  tendermint/tendermint node --proxy_app=tcp://rust-dev:26658
   
