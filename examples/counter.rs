@@ -6,19 +6,37 @@ extern crate futures;
 extern crate tokio;
 
 use std::env;
-use mariadb_proxy::packet::Packet;
+use std::collections::HashMap;
+use mariadb_proxy::packet::{Packet, PacketType};
 use mariadb_proxy::packet_handler::{PacketHandler};
 
-struct CounterHandler {}
+struct CounterHandler {
+  count_map: HashMap<String, u64>,
+}
 
 // Just forward the packet
 impl PacketHandler for CounterHandler {
 
   fn handle_request(&mut self, p: &Packet) -> Packet {
     // Print out the packet
-    debug!("[{}]", String::from_utf8_lossy(&p.bytes));
+    //debug!("[{}]", String::from_utf8_lossy(&p.bytes));
 
-
+    match p.packet_type() {
+      Ok(PacketType::ComQuery) => {
+        let payload = &p.bytes[5..];
+        let sql = String::from_utf8(payload.to_vec()).expect("Invalid UTF-8");
+        info!("SQL: {}", sql);
+        let tokens: Vec<&str> = sql.split(' ').collect();
+        let command = tokens[0].to_lowercase();
+        let count = self.count_map.entry(command).or_insert(0);
+        *count += 1;
+        println!("{:?}", self.count_map);
+        //info!("{}", tokens);
+      },
+      _ => {
+        debug!("{:?} packet", p.packet_type())
+      },
+    }
 
     Packet { bytes: p.bytes.clone() }
   }
@@ -42,6 +60,6 @@ async fn main() {
 
   let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
   info!("Proxy listening on: {}", bind_addr);
-  server.run(CounterHandler {}).await;
+  server.run(CounterHandler { count_map: HashMap::new() }).await;
 }
 

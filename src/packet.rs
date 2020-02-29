@@ -80,7 +80,7 @@ impl Packet {
 
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy,Clone,Debug)]
 pub enum PacketType {
   ComSleep = 0x00,
   ComQuit = 0x01,

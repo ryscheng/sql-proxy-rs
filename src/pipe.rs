@@ -43,7 +43,7 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
       let n = self.source.read(&mut read_buf[..]).await?;
       trace!("[{}:{:?}]: Read {} bytes from client", self.name, self.direction, n);
       if n <= 0 {
-        let e = Error::new(ErrorKind::Other, format!("[{}:{:?}]: Read {} bytes from {}, closing pipe.", self.name, self.direction, n));
+        let e = Error::new(ErrorKind::Other, format!("[{}:{:?}]: Read {} bytes, closing pipe.", self.name, self.direction, n));
         warn!("{}", e.to_string());
         return Err(e);
       }
