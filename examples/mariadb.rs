@@ -5,6 +5,8 @@ extern crate futures;
 #[macro_use] extern crate log;
 extern crate tokio;
 
+use std::env;
+use std::net::{SocketAddr};
 use abci::*;
 use env_logger::Env;
 use sqlparser::dialect::GenericDialect;
@@ -75,5 +77,6 @@ impl abci::Application for MariaDBApp {
 fn main() {
     // Run on localhost using default Tendermint port
     env_logger::from_env(Env::default().default_filter_or("info")).init();
-    abci::run_local(MariaDBApp::new());
+    let bind_addr = env::args().nth(1).unwrap_or("0.0.0.0:26658".to_string());
+    abci::run(bind_addr.parse().unwrap(), MariaDBApp::new());
 }
