@@ -7,4 +7,3 @@ docker run --rm -it \
   --network devnet \
   -e MYSQL_ROOT_PASSWORD=devpassword \
   -d mariadb
-
