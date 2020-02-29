@@ -38,15 +38,13 @@ impl Server {
             let (client_reader, client_writer) = client_socket.split();
             let mut server_socket = TcpStream::connect(db_addr).await.expect("Connecting to SQL database failed");
             let (server_reader, server_writer) = server_socket.split();
-            //let client_socket = Arc::new(client_socket);
-            //let server_socket = Arc::new(TcpStream::connect(db_addr).await.expect("Connecting to SQL database failed"));
             let mut forward_pipe = Pipe::new(client_addr.clone(), handler_ref.clone(), Direction::Forward, client_reader, server_writer);
             let mut backward_pipe = Pipe::new(client_addr.clone(), handler_ref.clone(), Direction::Backward, server_reader, client_writer);
             let _ = match try_join!(forward_pipe.run(), backward_pipe.run()) {
               Ok(((),())) => { trace!("Pipe closed successfully"); },
               Err(e) => { error!("Pipe closed with error: {}", e); },
             };
-            info!("Closing connection from {:?}", client_socket.peer_addr());
+            debug!("Closing connection from {:?}", client_socket.peer_addr());
           });
         }
         Err(err) => {

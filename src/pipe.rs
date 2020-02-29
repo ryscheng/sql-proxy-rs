@@ -41,18 +41,18 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
     loop {
       // Read from the source to read_buf, append to packet_buf
       let n = self.source.read(&mut read_buf[..]).await?;
-      trace!("[{}]: Read {} bytes from client", self.name, n);
+      trace!("[{}:{:?}]: Read {} bytes from client", self.name, self.direction, n);
       if n <= 0 {
-        let e = Error::new(ErrorKind::Other, format!("Read {} bytes from {}, closing pipe.", n, self.name));
-        error!("{}", e.to_string());
+        let e = Error::new(ErrorKind::Other, format!("[{}:{:?}]: Read {} bytes from {}, closing pipe.", self.name, self.direction, n));
+        warn!("{}", e.to_string());
         return Err(e);
       }
-      trace!("{} bytes read", n);
+      trace!("[{}:{:?}]: {} bytes read from source", self.name, self.direction, n);
       packet_buf.extend_from_slice(&read_buf[0..n]);
 
       // Process all packets in packet_buf, put into write_buf
       while let Some(packet) = get_packet(&mut packet_buf) {
-        trace!("Processing packet");
+        trace!("[{}:{:?}]: Processing packet", self.name, self.direction);
         { // Scope for self.packet_handler Mutex
           let mut h = self.packet_handler.lock().unwrap();
           let transformed_packet = match self.direction {
@@ -66,6 +66,7 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
       // Write all to sink
       let n = self.sink.write(&write_buf[..]).await?;
       let _ : Vec<u8> = write_buf.drain(0..n).collect();
+      trace!("[{}:{:?}]: {} bytes written to sink", self.name, self.direction, n);
     } // end loop
 
   }
