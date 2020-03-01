@@ -1,4 +1,7 @@
-use std::io::{Error, ErrorKind};
+use std::{
+    convert::TryFrom as _,
+    io::{Error, ErrorKind},
+};
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
@@ -43,72 +46,42 @@ impl Packet {
 
     /// Determine the type of packet
     pub fn packet_type(&self) -> Result<PacketType, Error> {
-        match self.bytes[4] {
-            0x00 => Ok(PacketType::ComSleep),
-            0x01 => Ok(PacketType::ComQuit),
-            0x02 => Ok(PacketType::ComInitDb),
-            0x03 => Ok(PacketType::ComQuery),
-            0x04 => Ok(PacketType::ComFieldList),
-            0x05 => Ok(PacketType::ComCreateDb),
-            0x06 => Ok(PacketType::ComDropDb),
-            0x07 => Ok(PacketType::ComRefresh),
-            0x08 => Ok(PacketType::ComShutdown),
-            0x09 => Ok(PacketType::ComStatistics),
-            0x0a => Ok(PacketType::ComProcessInfo),
-            0x0b => Ok(PacketType::ComConnect),
-            0x0c => Ok(PacketType::ComProcessKill),
-            0x0d => Ok(PacketType::ComDebug),
-            0x0e => Ok(PacketType::ComPing),
-            0x0f => Ok(PacketType::ComTime),
-            0x10 => Ok(PacketType::ComDelayedInsert),
-            0x11 => Ok(PacketType::ComChangeUser),
-            0x12 => Ok(PacketType::ComBinlogDump),
-            0x13 => Ok(PacketType::ComTableDump),
-            0x14 => Ok(PacketType::ComConnectOut),
-            0x15 => Ok(PacketType::ComRegisterSlave),
-            0x16 => Ok(PacketType::ComStmtPrepare),
-            0x17 => Ok(PacketType::ComStmtExecute),
-            0x18 => Ok(PacketType::ComStmtSendLongData),
-            0x19 => Ok(PacketType::ComStmtClose),
-            0x1a => Ok(PacketType::ComStmtReset),
-            0x1d => Ok(PacketType::ComDaemon),
-            0x1e => Ok(PacketType::ComBinlogDumpGtid),
-            0x1f => Ok(PacketType::ComResetConnection),
-            _ => Err(Error::new(ErrorKind::Other, "Invalid packet type")),
-        }
+        PacketType::try_from(self.bytes[4])
+            .map_err(|_| Error::new(ErrorKind::Other, "Invalid packet type"))
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, proper::Prim)]
+#[prim(ty = "u8")]
 pub enum PacketType {
-    ComSleep = 0x00,
-    ComQuit = 0x01,
-    ComInitDb = 0x02,
-    ComQuery = 0x03,
-    ComFieldList = 0x04,
-    ComCreateDb = 0x05,
-    ComDropDb = 0x06,
-    ComRefresh = 0x07,
-    ComShutdown = 0x08,
-    ComStatistics = 0x09,
-    ComProcessInfo = 0x0a,
-    ComConnect = 0x0b,
-    ComProcessKill = 0x0c,
-    ComDebug = 0x0d,
-    ComPing = 0x0e,
-    ComTime = 0x0f,
-    ComDelayedInsert = 0x10,
-    ComChangeUser = 0x11,
-    ComBinlogDump = 0x12,
-    ComTableDump = 0x13,
-    ComConnectOut = 0x14,
-    ComRegisterSlave = 0x15,
-    ComStmtPrepare = 0x16,
-    ComStmtExecute = 0x17,
-    ComStmtSendLongData = 0x18,
-    ComStmtClose = 0x19,
-    ComStmtReset = 0x1a,
-    ComDaemon = 0x1d,
-    ComBinlogDumpGtid = 0x1e,
-    ComResetConnection = 0x1f,
+    ComSleep,
+    ComQuit,
+    ComInitDb,
+    ComQuery,
+    ComFieldList,
+    ComCreateDb,
+    ComDropDb,
+    ComRefresh,
+    ComShutdown,
+    ComStatistics,
+    ComProcessInfo,
+    ComConnect,
+    ComProcessKill,
+    ComDebug,
+    ComPing,
+    ComTime,
+    ComDelayedInsert,
+    ComChangeUser,
+    ComBinlogDump,
+    ComTableDump,
+    ComConnectOut,
+    ComRegisterSlave,
+    ComStmtPrepare,
+    ComStmtExecute,
+    ComStmtSendLongData,
+    ComStmtClose,
+    ComStmtReset,
+    ComDaemon,
+    ComBinlogDumpGtid,
+    ComResetConnection,
 }
