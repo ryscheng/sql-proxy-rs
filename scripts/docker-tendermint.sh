@@ -6,11 +6,14 @@ docker run --rm -it \
   --network devnet \
   -v "/tmp/tendermint:/tendermint" \
   --name tendermint \
-  tendermint/tendermint init
+  tendermint/tendermint:v0.32.8 \
+  init
+  #unsafe_reset_all
   
 docker run --rm -it \
   --network devnet \
   -v "/tmp/tendermint:/tendermint" \
   --name tendermint \
-  tendermint/tendermint node --proxy_app=tcp://rust-dev:26658
+  tendermint/tendermint:v0.32.8 \
+  node --proxy_app=tcp://rust-dev:26658
   

@@ -1,5 +1,6 @@
 extern crate mariadb_proxy;
 
+extern crate abci;
 extern crate env_logger;
 extern crate futures;
 extern crate futures_util;
@@ -13,12 +14,15 @@ use hyper::body::{Body};
 use mariadb_proxy::packet::{Packet, PacketType};
 use mariadb_proxy::packet_handler::{PacketHandler};
 
-struct CounterHandler {
+struct AbciApp;
+impl abci::Application for AbciApp {}
+
+struct ProxyHandler {
   http_client: Client<HttpConnector, Body>,
 }
 
 // Just forward the packet
-impl PacketHandler for CounterHandler {
+impl PacketHandler for ProxyHandler {
 
   fn handle_request(&mut self, p: &Packet) -> Packet {
     // Print out the packet
@@ -63,9 +67,13 @@ async fn main() {
   let bind_addr = env::args().nth(1).unwrap_or("0.0.0.0:3306".to_string());
   // determine address of the MariaDB instance we are proxying for
   let db_addr = env::args().nth(2).unwrap_or("mariadb:3306".to_string());
+  // determint address for the ABCI application
+  let abci_addr = env::args().nth(2).unwrap_or("0.0.0.0:26658".to_string());
 
   let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
   info!("Proxy listening on: {}", bind_addr);
-  server.run(CounterHandler { http_client: Client::new() }).await;
+  abci::run(abci_addr.parse().unwrap(), AbciApp);
+  //server.run(ProxyHandler { http_client: Client::new() }).await;
+
 }
 
