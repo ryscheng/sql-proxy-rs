@@ -4,7 +4,7 @@ extern crate log;
 use std::{collections::HashMap, env};
 
 use mariadb_proxy::{
-    packet::{Packet, PacketType},
+    packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
 
@@ -17,31 +17,23 @@ impl PacketHandler for CounterHandler {
     fn handle_request(&mut self, p: &Packet) -> Packet {
         // Print out the packet
         //debug!("[{}]", String::from_utf8_lossy(&p.bytes));
-
-        match p.packet_type() {
-            Ok(PacketType::ComQuery) => {
-                let payload = &p.bytes[5..];
-                let sql = String::from_utf8(payload.to_vec()).expect("Invalid UTF-8");
+        match p.get_query() {
+            Ok(sql) => {
                 info!("SQL: {}", sql);
                 let tokens: Vec<&str> = sql.split(' ').collect();
                 let command = tokens[0].to_lowercase();
                 let count = self.count_map.entry(command).or_insert(0);
                 *count += 1;
                 println!("{:?}", self.count_map);
-                //info!("{}", tokens);
             }
-            _ => debug!("{:?} packet", p.packet_type()),
-        }
+            Err(e) => debug!("{:?} packet: {}", p.get_packet_type(), e),
+        };
 
-        Packet {
-            bytes: p.bytes.clone(),
-        }
+        p.clone()
     }
 
     fn handle_response(&mut self, p: &Packet) -> Packet {
-        Packet {
-            bytes: p.bytes.clone(),
-        }
+        p.clone()
     }
 }
 
@@ -54,9 +46,14 @@ async fn main() {
     // determine address for the proxy to bind to
     let bind_addr = env::args().nth(1).unwrap_or("0.0.0.0:3306".to_string());
     // determine address of the MariaDB instance we are proxying for
-    let db_addr = env::args().nth(2).unwrap_or("mariadb:3306".to_string());
+    let db_addr = env::args().nth(2).unwrap_or("postgres:3306".to_string());
 
-    let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
+    let mut server = mariadb_proxy::server::Server::new(
+        bind_addr.clone(),
+        DatabaseType::PostgresSQL,
+        db_addr.clone(),
+    )
+    .await;
     info!("Proxy listening on: {}", bind_addr);
     server
         .run(CounterHandler {

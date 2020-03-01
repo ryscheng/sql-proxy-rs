@@ -1,5 +1,3 @@
-use std::env;
-
 use abci::*;
 use byteorder::{BigEndian, ByteOrder};
 use env_logger::Env;
@@ -70,6 +68,8 @@ impl abci::Application for CounterApp {
 fn main() {
     // Run on localhost using default Tendermint port
     env_logger::from_env(Env::default().default_filter_or("info")).init();
-    let bind_addr = env::args().nth(1).unwrap_or("0.0.0.0:26658".to_string());
+    let bind_addr = std::env::args()
+        .nth(1)
+        .unwrap_or("0.0.0.0:26658".to_string());
     abci::run(bind_addr.parse().unwrap(), CounterApp::new());
 }

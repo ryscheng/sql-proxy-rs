@@ -1,22 +1,24 @@
-use std::sync::{Arc, Mutex};
-
 use futures::{stream::StreamExt, try_join};
+use std::sync::{Arc, Mutex};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{
+    packet::DatabaseType,
     packet_handler::{Direction, PacketHandler},
     pipe::Pipe,
 };
 
 #[derive(Debug)]
 pub struct Server {
+    db_type: DatabaseType,
     db_addr: String,
     listener: TcpListener,
 }
 
 impl Server {
-    pub async fn new(bind_addr: String, db_addr: String) -> Server {
+    pub async fn new(bind_addr: String, db_type: DatabaseType, db_addr: String) -> Server {
         Server {
+            db_type,
             db_addr,
             listener: TcpListener::bind(bind_addr)
                 .await
@@ -25,6 +27,7 @@ impl Server {
     }
 
     pub async fn run<T: PacketHandler + Send + Sync + 'static>(&mut self, packet_handler: T) {
+        let db_type = self.db_type;
         let packet_handler = Arc::new(Mutex::new(packet_handler));
         let mut incoming = self.listener.incoming();
         while let Some(conn) = incoming.next().await {
@@ -45,6 +48,7 @@ impl Server {
                         let (server_reader, server_writer) = server_socket.split();
                         let mut forward_pipe = Pipe::new(
                             client_addr.clone(),
+                            db_type,
                             handler_ref.clone(),
                             Direction::Forward,
                             client_reader,
@@ -52,6 +56,7 @@ impl Server {
                         );
                         let mut backward_pipe = Pipe::new(
                             client_addr.clone(),
+                            db_type,
                             handler_ref.clone(),
                             Direction::Backward,
                             server_reader,
@@ -64,7 +69,7 @@ impl Server {
                             Err(e) => {
                                 error!("Pipe closed with error: {}", e);
                             }
-                        };
+                        }
                         debug!("Closing connection from {:?}", client_socket.peer_addr());
                     });
                 }
@@ -72,7 +77,7 @@ impl Server {
                     // Handle error by printing to STDOUT.
                     error!("accept error = {:?}", err);
                 }
-            };
+            }
         }
         info!("Server run() complete");
     }
