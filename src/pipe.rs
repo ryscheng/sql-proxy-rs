@@ -77,20 +77,28 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
 }
 
 fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet> {
-  // Check for header
-  if packet_buf.len() > 3 {
-    let l: usize = (((packet_buf[2] as u32) << 16) |
-                    ((packet_buf[1] as u32) << 8) |
-                    packet_buf[0] as u32) as usize;
-    let s = 4 + l;
-    // Check for entire packet size
-    if packet_buf.len() >= s {
-      let p = Packet::new(DatabaseType::MariaDB, packet_buf.drain(0..s).collect());
-      Some(p)
-    } else {
+  match db_type {
+    DatabaseType::MariaDB => {
+      // Check for header
+      if packet_buf.len() > 3 {
+        let l: usize = (((packet_buf[2] as u32) << 16) |
+                        ((packet_buf[1] as u32) << 8) |
+                        packet_buf[0] as u32) as usize;
+        let s = 4 + l;
+        // Check for entire packet size
+        if packet_buf.len() >= s {
+          let p = Packet::new(DatabaseType::MariaDB, packet_buf.drain(0..s).collect());
+          Some(p)
+        } else {
+          None
+        }
+      } else {
+        None
+      }
+    },
+    DatabaseType::PostgresSQL => {
+      //TODO
       None
-    }
-  } else {
-    None
+    },
   }
 }
