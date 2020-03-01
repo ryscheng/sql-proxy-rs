@@ -1,9 +1,5 @@
-extern crate abci;
-extern crate byteorder;
-extern crate env_logger;
-
 use std::env;
-use std::net::{SocketAddr};
+
 use abci::*;
 use byteorder::{BigEndian, ByteOrder};
 use env_logger::Env;
@@ -46,7 +42,7 @@ impl abci::Application for CounterApp {
         }
 
         // Update state to keep state correct for next check_tx call
-        self.count = c; 
+        self.count = c;
         resp
     }
 

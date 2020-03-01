@@ -1,8 +1,5 @@
-extern crate byteorder;
-extern crate env_logger;
-extern crate futures;
-#[macro_use] extern crate log;
-extern crate tokio;
+#[macro_use]
+extern crate log;
 
 pub mod packet;
 pub mod packet_handler;
