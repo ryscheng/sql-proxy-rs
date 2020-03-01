@@ -7,7 +7,7 @@ extern crate tokio;
 
 use std::env;
 use std::collections::HashMap;
-use mariadb_proxy::packet::{Packet, PacketType};
+use mariadb_proxy::packet::{Packet};
 use mariadb_proxy::packet_handler::{PacketHandler};
 
 struct CounterHandler {
@@ -20,29 +20,25 @@ impl PacketHandler for CounterHandler {
   fn handle_request(&mut self, p: &Packet) -> Packet {
     // Print out the packet
     //debug!("[{}]", String::from_utf8_lossy(&p.bytes));
-
-    match p.packet_type() {
-      Ok(PacketType::ComQuery) => {
-        let payload = &p.bytes[5..];
-        let sql = String::from_utf8(payload.to_vec()).expect("Invalid UTF-8");
+    match p.get_query() {
+      Ok(sql) => {
         info!("SQL: {}", sql);
         let tokens: Vec<&str> = sql.split(' ').collect();
         let command = tokens[0].to_lowercase();
         let count = self.count_map.entry(command).or_insert(0);
         *count += 1;
         println!("{:?}", self.count_map);
-        //info!("{}", tokens);
       },
-      _ => {
-        debug!("{:?} packet", p.packet_type())
+      Err(e) => {
+        debug!("{:?} packet: {}", p.get_packet_type(), e)
       },
-    }
+    };
 
-    Packet { bytes: p.bytes.clone() }
+    p.clone()
   }
 
   fn handle_response(&mut self, p: &Packet) -> Packet {
-    Packet { bytes: p.bytes.clone() }
+    p.clone()
   }
 
 }

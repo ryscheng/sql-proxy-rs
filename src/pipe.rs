@@ -2,7 +2,7 @@
 use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
-use crate::packet::Packet;
+use crate::packet::{DatabaseType, Packet};
 use crate::packet_handler::{Direction, PacketHandler};
 
 pub struct Pipe<T: AsyncReadExt, U: AsyncWriteExt> {
@@ -51,8 +51,8 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
       packet_buf.extend_from_slice(&read_buf[0..n]);
 
       // Process all packets in packet_buf, put into write_buf
-      while let Some(packet) = get_packet(&mut packet_buf) {
-        trace!("[{}:{:?}]: Processing packet", self.name, self.direction);
+      while let Some(packet) = get_packet_mariadb(&mut packet_buf) {
+        debug!("[{}:{:?}]: Processing packet", self.name, self.direction);
         { // Scope for self.packet_handler Mutex
           let mut h = self.packet_handler.lock().unwrap();
           let transformed_packet = match self.direction {
@@ -73,14 +73,14 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
 
 }
 
-fn get_packet(packet_buf: &mut Vec<u8>) -> Option<Packet> {
+fn get_packet_mariadb(packet_buf: &mut Vec<u8>) -> Option<Packet> {
   // Check for header
   if packet_buf.len() > 3 {
     let l = parse_packet_length(packet_buf);
     let s = 4 + l;
     // Check for entire packet size
     if packet_buf.len() >= s {
-      let p = Packet { bytes: packet_buf.drain(0..s).collect() };
+      let p = Packet::new(DatabaseType::MariaDB, packet_buf.drain(0..s).collect());
       Some(p)
     } else {
       None

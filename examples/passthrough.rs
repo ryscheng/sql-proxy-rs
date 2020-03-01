@@ -15,11 +15,11 @@ struct PassthroughHandler {}
 impl PacketHandler for PassthroughHandler {
 
   fn handle_request(&mut self, p: &Packet) -> Packet {
-    Packet { bytes: p.bytes.clone() }
+    p.clone()
   }
 
   fn handle_response(&mut self, p: &Packet) -> Packet {
-    Packet { bytes: p.bytes.clone() }
+    p.clone()
   }
 
 }
