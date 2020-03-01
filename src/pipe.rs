@@ -7,6 +7,7 @@ use crate::packet_handler::{Direction, PacketHandler};
 
 pub struct Pipe<T: AsyncReadExt, U: AsyncWriteExt> {
   name: String,
+  db_type: DatabaseType,
   packet_handler: Arc<Mutex<dyn PacketHandler+Send>>,
   direction: Direction,
   source: T,
@@ -17,12 +18,14 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
 
   pub fn new(
       name: String,
+      db_type: DatabaseType,
       packet_handler: Arc<Mutex<dyn PacketHandler+Send>>,
       direction: Direction,
       reader: T,
       writer: U) -> Pipe<T, U> {
     Pipe {
       name: name,
+      db_type: db_type,
       packet_handler: packet_handler,
       direction: direction,
       source: reader,
@@ -51,7 +54,7 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
       packet_buf.extend_from_slice(&read_buf[0..n]);
 
       // Process all packets in packet_buf, put into write_buf
-      while let Some(packet) = get_packet_mariadb(&mut packet_buf) {
+      while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
         debug!("[{}:{:?}]: Processing packet", self.name, self.direction);
         { // Scope for self.packet_handler Mutex
           let mut h = self.packet_handler.lock().unwrap();
@@ -73,10 +76,12 @@ impl<T: AsyncReadExt+Unpin, U: AsyncWriteExt+Unpin> Pipe<T, U> {
 
 }
 
-fn get_packet_mariadb(packet_buf: &mut Vec<u8>) -> Option<Packet> {
+fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet> {
   // Check for header
   if packet_buf.len() > 3 {
-    let l = parse_packet_length(packet_buf);
+    let l: usize = (((packet_buf[2] as u32) << 16) |
+                    ((packet_buf[1] as u32) << 8) |
+                    packet_buf[0] as u32) as usize;
     let s = 4 + l;
     // Check for entire packet size
     if packet_buf.len() >= s {
@@ -88,11 +93,4 @@ fn get_packet_mariadb(packet_buf: &mut Vec<u8>) -> Option<Packet> {
   } else {
     None
   }
-}
-
-/// Parse the MySQL packet length (3 byte little-endian)
-fn parse_packet_length(header: &[u8]) -> usize {
-  (((header[2] as u32) << 16) |
-    ((header[1] as u32) << 8) |
-    header[0] as u32) as usize
 }
