@@ -11,17 +11,17 @@ use hyper::{
     client::{Client, HttpConnector},
     Uri,
 };
-use mysql::{Pool};
+use mysql::{Pool, from_row};
 // use mysql_async;
 use mariadb_proxy::{
     packet::{Packet, PacketType},
     packet_handler::PacketHandler,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use sodiumoxide::crypto::hash::sha512::{Digest, hash};
 use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-}
+    io::{Error, ErrorKind},
+};
 use sqlparser::{dialect::GenericDialect, parser::Parser};
 use tokio;
 
@@ -40,17 +40,16 @@ impl Transaction {
         }
     }
 
-    fn new(bytes: &[u8]) -> Transaction {
+    fn new(bytes: &[u8]) -> Result<Transaction, Error> {
         let txn_str = String::from_utf8(bytes.to_vec()).unwrap();
         let tokens = txn_str.split(DELIMITER).collect();
         if tokens.len() < 2 {
-            resp.set_code(1);
-            resp.set_log(String::from("Missing node_id or SQL query in transaction"));
-            return resp;
-        }
-        Transaction {
-            node_id: tokens[0].to_string(),
-            sql: tokens[1].to_string(),
+            Err(Error::new(ErrorKind::Other, "Missing node_id or SQL query in transaction"))
+        } else {
+            Transaction {
+                node_id: tokens[0].to_string(),
+                sql: tokens[1].to_string(),
+            }
         }
     }
 }
@@ -60,9 +59,8 @@ struct AbciApp {
     node_id: String,
     sql_pool: Pool,
     txn_queue: Vec<Transaction>,
-    app_hash: String,
-    hasher: Hasher,
     block_height: i64
+    app_hash: String,
 }
 
 impl AbciApp {
@@ -71,9 +69,8 @@ impl AbciApp {
             node_id: node_id,
             sql_pool: sql_pool,
             txn_queue: Vec::new(),
-            app_hash: "".to_string(),
-            hasher: DefaultHasher::new(),
             block_height: 0,
+            app_hash: "".to_string(),
         }
     }
 }
@@ -85,12 +82,10 @@ impl Application for AbciApp {
     fn info(&mut self, _req: &RequestInfo) -> ResponseInfo {
         debug!("ABCI: info()");
         let mut response = ResponseInfo::new();
-        for row in pool.prep_exec("SELECT MAX(block_height) AS max_height, app_hash  FROM `tendermint_blocks`;", ()).expect("SQL query failed to execute") {
+        for row in self.sql_pool.prep_exec("SELECT MAX(block_height) AS max_height, app_hash  FROM `tendermint_blocks`;", ()).expect("SQL query failed to execute") {
             let (height, app_hash) = from_row(row.unwrap());
             self.block_height = height;
-            self.hasher = DefaultHasher::new();
             self.app_hash = app_hash;
-            self.app_hash.hash(&mut self.hasher); // Hash chaining
             response.set_last_block_height(self.block_height);
             response.set_last_block_app_hash(self.app_hash.into_bytes());
         }
@@ -148,8 +143,6 @@ impl Application for AbciApp {
     /// commit()
     fn begin_block(&mut self, _req: &RequestBeginBlock) -> ResponseBeginBlock {
         debug!("ABCI: begin_block()");
-        self.hasher = DefaultHasher::new();
-        self.app_hash.hash(&mut self.hasher); // Hash chaining
         self.block_height += 1;
         self.txn_queue.clear();
         self.txn_queue.push(Transaction::new("abci".to_string(), "START TRANSACTION;"));
@@ -164,7 +157,7 @@ impl Application for AbciApp {
     fn deliver_tx(&mut self, req: &RequestDeliverTx) -> ResponseDeliverTx {
         info!("ABCI: deliver_tx()");
         let txn = Transaction::new(req.get_tx());
-        txn.sql.hash(&mut self.hasher);
+        self.app_hash = hash(self.app_hash + txn.sql); // Hash chaining
         self.txn_queue.push(txn);
         ResponseDeliverTx::new()
     }
@@ -173,7 +166,6 @@ impl Application for AbciApp {
     fn end_block(&mut self, req: &RequestEndBlock) -> ResponseEndBlock {
         debug!("ABCI: end_block()");
         self.block_height = req.get_height();
-        self.app_hash = self.hasher.finish().to_string();
 
         self.txn_queue.push(Transaction::new(
                 "abci".to_string(), 
@@ -202,10 +194,10 @@ impl Application for AbciApp {
         info!("Forwarding SQL: {}", sql);
 
         // https://docs.rs/mysql/17.0.0/mysql/struct.QueryResult.html
-        let result = pool.prep_exec(sql, ()).expect("SQL query failed to execute");
-        if self.node_id == txn.node_id {
-            // TODO: route responses back to client socket
-        }
+        let result = self.sql_pool.prep_exec(sql, ()).expect("SQL query failed to execute");
+        // TODO: route responses back to client socket
+        //if self.node_id == txn.node_id {
+        //}
         info!("Query successfully executed");
 
         // Return default code 0 == bueno
@@ -246,7 +238,7 @@ impl PacketHandler for ProxyHandler {
 
         //TODO: dynamic route 'write' requests
         //p.clone()
-        Packet { bytes: Vec::new() }; // Dropping packets for now
+        Packet { bytes: Vec::new() } // Dropping packets for now
     }
 
     fn handle_response(&mut self, p: &Packet) -> Packet {
