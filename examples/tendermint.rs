@@ -279,9 +279,15 @@ async fn main() {
     // determint address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
 
+    // Start proxy server
+    let handler = ProxyHandler { node_id: node_id.clone(), http_client: Client::new() };
     let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_uri.host().unwrap().to_string()).await;
-    info!("Proxy listening on: {}", bind_addr);
-    abci::run(abci_addr.parse().unwrap(), AbciApp::new(node_id, Pool::new(db_uri_str).unwrap()));
-    //server.run(ProxyHandler { node_id: node_id, http_client: Client::new() }).await;
+    tokio::spawn(async move {
+        info!("Proxy listening on: {}", bind_addr);
+        server.run(handler).await;
+    });
     
+    // Start ABCI application
+    info!("ABCI application listening on: {}", abci_addr);
+    abci::run(abci_addr.parse().unwrap(), AbciApp::new(node_id.clone(), Pool::new(db_uri_str).unwrap()));
 }
