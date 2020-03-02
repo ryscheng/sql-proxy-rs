@@ -1,42 +1,32 @@
 extern crate mariadb_proxy;
 
-extern crate abci;
-extern crate byteorder;
-extern crate env_logger;
-extern crate futures;
-extern crate futures_util;
-extern crate hyper;
 #[macro_use]
 extern crate log;
-extern crate mysql;
-extern crate sqlparser;
-extern crate tokio;
 
 use abci::*;
-use env_logger::Env;
+use env_logger;
 use futures_util::future::FutureExt;
 use hyper::{
     body::Body,
     client::{Client, HttpConnector},
 };
-use mysql as my;
-use std::env;
+use mysql::{Pool};
 // use mysql_async;
 use mariadb_proxy::{
     packet::{Packet, PacketType},
     packet_handler::PacketHandler,
 };
 use sqlparser::{dialect::GenericDialect, parser::Parser};
+use tokio;
 
 // Convert incoming tx data to Sql string
 fn convert_tx(tx: &[u8]) -> String {
-    let sql = String::from_utf8(tx.to_vec()).unwrap();
-    return sql;
+    String::from_utf8(tx.to_vec()).unwrap()
 }
 
 fn run_query_sync(sql: String) {
     let database_url = "mysql://root:devpassword@mariadb:3306/mariadb";
-    let pool = my::Pool::new(database_url).unwrap();
+    let pool = Pool::new(database_url).unwrap();
 
     info!("run_query_sync(): {}", sql);
 
@@ -66,7 +56,7 @@ impl AbciApp {
     }
 }
 
-impl abci::Application for AbciApp {
+impl Application for AbciApp {
     /// Query Connection: Called on startup from Tendermint.  The application should normally
     /// return the last know state so Tendermint can determine if it needs to replay blocks
     /// to the application.
@@ -178,52 +168,47 @@ impl PacketHandler for ProxyHandler {
         // Print out the packet
         //debug!("[{}]", String::from_utf8_lossy(&p.bytes));
 
-        match p.packet_type() {
-            // Forward all SQL queries to Tendermint
-            Ok(PacketType::ComQuery) => {
-                let payload = &p.bytes[5..];
-                let sql = String::from_utf8(payload.to_vec()).expect("Invalid UTF-8");
-                info!("SQL: {}", sql);
-                let mut url: String = "http://localhost:26657/broadcast_tx_commit?tx=".to_owned();
-                url.push_str(&sql);
-                info!("Pushing to Tendermint: {}", url);
-                let _fut = self.http_client.get(url.parse().unwrap()).then(|res| {
-                    async move {
-                        let response = res.unwrap();
-                        debug!("Response: {}", response.status());
-                        debug!("Headers: {:#?}\n", response.headers());
-                    }
-                });
-            }
-            _ => debug!("{:?} packet", p.packet_type()),
+        if let Ok(PacketType::ComQuery) = p.packet_type() {
+            let payload = &p.bytes[5..];
+            let sql = String::from_utf8(payload.to_vec()).expect("Invalid UTF-8");
+            info!("SQL: {}", sql);
+            let mut url: String = "http://localhost:26657/broadcast_tx_commit?tx=".to_owned();
+            url.push_str(&sql);
+            info!("Pushing to Tendermint: {}", url);
+            let _fut = self.http_client.get(url.parse().unwrap()).then(|res| {
+                async move {
+                    let response = res.unwrap();
+                    debug!("Response: {}", response.status());
+                    debug!("Headers: {:#?}\n", response.headers());
+                }
+            });
+        } else {
+            debug!("{:?} packet", p.packet_type());
         }
 
-        Packet {
-            bytes: p.bytes.clone(),
-        }
+        p.clone()
     }
 
     fn handle_response(&mut self, p: &Packet) -> Packet {
-        Packet {
-            bytes: p.bytes.clone(),
-        }
+        p.clone()
     }
 }
 
 #[tokio::main]
 async fn main() {
-    env_logger::from_env(Env::default().default_filter_or("info")).init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     info!("Tendermint MariaDB proxy... ");
 
+    let mut args = std::env::args().skip(1);
     // determine address for the proxy to bind to
-    let bind_addr = env::args().nth(1).unwrap_or("0.0.0.0:3306".to_string());
-    // determine address of the MariaDB instance we are proxying for
-    let db_addr = env::args().nth(2).unwrap_or("mariadb:3306".to_string());
+    let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());
+    // determine address of the database we are proxying for
+    let db_addr = args.next().unwrap_or_else(|| "mariadb:3306".to_string());
     // determint address for the ABCI application
-    let abci_addr = env::args().nth(2).unwrap_or("0.0.0.0:26658".to_string());
+    let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
 
-    let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
+    let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr).await;
     info!("Proxy listening on: {}", bind_addr);
     abci::run(abci_addr.parse().unwrap(), AbciApp::new());
     //server.run(ProxyHandler { http_client: Client::new() }).await;
