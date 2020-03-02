@@ -148,14 +148,12 @@ impl Application for AbciApp {
             return ResponseDeliverTx::new();
         }
 
-        match pool.prep_exec(sql, ()) {
-            Ok(_) => {
-                info!("Query successfully executed");
-            }
-            Err(_e) => {
-                info!("Query error: {}", _e);
-            }
+        // https://docs.rs/mysql/17.0.0/mysql/struct.QueryResult.html
+        let result = pool.prep_exec(sql, ()).expect("SQL query failed to execute");
+        if self.node_id == txn.node_id {
+            // TODO:
         }
+        info!("Query successfully executed");
         // Return default code 0 == bueno
         ResponseDeliverTx::new()
     }
