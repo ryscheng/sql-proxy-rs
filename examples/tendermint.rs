@@ -9,6 +9,7 @@ use futures_util::future::FutureExt;
 use hyper::{
     body::Body,
     client::{Client, HttpConnector},
+    Uri,
 };
 use mysql::{Pool};
 // use mysql_async;
@@ -22,41 +23,44 @@ use tokio;
 
 const DELIMITER: &str = "!_!";
 
-// Convert incoming tx data to Sql string
-fn convert_tx(tx: &[u8]) -> String {
-    String::from_utf8(tx.to_vec()).unwrap()
+struct Transaction {
+    pub node_id: String,
+    pub sql: String,
 }
 
-fn run_query_sync(sql: String) {
-    let database_url = "mysql://root:devpassword@mariadb:3306/mariadb";
-    let pool = Pool::new(database_url).unwrap();
+impl Transaction {
+    fn new(node_id: String, sql: String) -> Transaction {
+        Transaction {
+            node_id: node_id,
+            sql: sql,
+        }
+    }
 
-    info!("run_query_sync(): {}", sql);
-
-    if sql.len() > 0 {
-        let result = pool.prep_exec(sql, ());
-
-        match result {
-            Ok(_) => {
-                info!("Query successfully executed");
-            }
-            Err(_e) => {
-                info!("Query error: {}", _e);
-            }
+    fn new(bytes: &[u8]) -> Transaction {
+        let txn_str = String::from_utf8(bytes.to_vec()).unwrap();
+        let tokens = txn_str.split(DELIMITER).collect();
+        if tokens.len() < 2 {
+            resp.set_code(1);
+            resp.set_log(String::from("Missing node_id or SQL query in transaction"));
+            return resp;
+        }
+        Transaction {
+            node_id: tokens[0].to_string(),
+            sql: tokens[1].to_string(),
         }
     }
 }
 
 struct AbciApp {
     node_id: String,
-    sql: String,
+    sql_pool: Pool,
 }
 
 impl AbciApp {
-    fn new(node_id: String) -> AbciApp {
+    fn new(node_id: String, sql_pool: Pool) -> AbciApp {
         AbciApp {
             node_id: node_id,
-            sql: String::from(""),
+            sql_pool: sql_pool,
         }
     }
 }
@@ -66,27 +70,27 @@ impl Application for AbciApp {
     /// return the last know state so Tendermint can determine if it needs to replay blocks
     /// to the application.
     fn info(&mut self, _req: &RequestInfo) -> ResponseInfo {
-        info!("info()");
+        debug!("ABCI: info()");
         ResponseInfo::new()
     }
 
     /// Query Connection: Set options on the application (rarely used)
     fn set_option(&mut self, _req: &RequestSetOption) -> ResponseSetOption {
-        info!("set_option()");
+        debug!("ABCI: set_option()");
         ResponseSetOption::new()
     }
 
     /// Query Connection: Query your application. This usually resolves through a merkle tree holding
     /// the state of the app.
     fn query(&mut self, _req: &RequestQuery) -> ResponseQuery {
-        info!("query()");
+        debug!("ABCI: query()");
         ResponseQuery::new()
     }
 
     /// Consensus Connection:  Called once on startup. Usually used to establish initial (genesis)
     /// state.
     fn init_chain(&mut self, _req: &RequestInitChain) -> ResponseInitChain {
-        info!("init_chain()");
+        debug!("ABCI: init_chain()");
         ResponseInitChain::new()
     }
 
@@ -97,49 +101,61 @@ impl Application for AbciApp {
     /// end_block()
     /// commit()
     fn begin_block(&mut self, _req: &RequestBeginBlock) -> ResponseBeginBlock {
-        info!("begin_block()");
+        debug!("ABCI: begin_block()");
         ResponseBeginBlock::new()
     }
 
     /// Consensus Connection: Called at the end of the block.  Often used to update the validator set.
     fn end_block(&mut self, _req: &RequestEndBlock) -> ResponseEndBlock {
-        info!("end_block()");
+        debug!("ABCI: end_block()");
         ResponseEndBlock::new()
     }
 
     // Validate transactions.  Rule: SQL string must be valid SQL
     fn check_tx(&mut self, req: &RequestCheckTx) -> ResponseCheckTx {
-        info!("check_tx()");
-
-        let sql = convert_tx(req.get_tx());
-        info!("Sql query: {}", sql);
-
-        let dialect = GenericDialect {};
+        debug!("ABCI: check_tx()");
         let mut resp = ResponseCheckTx::new();
+        let txn = Transaction::new(req.get_tx());
+
+        // Parse SQL
+        info!("Checking Transaction: Sql query: {}", txn.sql);
         // TODO: cover sql injection
-        match Parser::parse_sql(&dialect, sql.clone()) {
+        let dialect = GenericDialect {};
+        match Parser::parse_sql(&dialect, txn.sql.clone()) {
             Ok(_val) => {
                 info!("Valid SQL");
-                // Update state to keep state correct for next check_tx call
-                self.sql = sql;
+                resp.set_code(0);
             }
             Err(_e) => {
                 info!("Invalid SQL");
-                // Return error
-                resp.set_code(1);
+                resp.set_code(1);  // Return error
                 resp.set_log(String::from("Must be valid sql!"));
             }
         }
         return resp;
     }
 
+    // Transaction = 1 SQL query
+    // Process the SQL query
     fn deliver_tx(&mut self, req: &RequestDeliverTx) -> ResponseDeliverTx {
-        info!("deliver_tx()");
+        info!("ABCI: deliver_tx()");
 
-        // Get the Tx [u8]
-        let sql = convert_tx(req.get_tx());
+        let txn = Transaction::new(req.get_tx());
         // Update state
-        self.sql = sql;
+        info!("Forwarding SQL: {}", txn.sql);
+
+        if txn.sql.len() <= 0 {
+            return ResponseDeliverTx::new();
+        }
+
+        match pool.prep_exec(sql, ()) {
+            Ok(_) => {
+                info!("Query successfully executed");
+            }
+            Err(_e) => {
+                info!("Query error: {}", _e);
+            }
+        }
         // Return default code 0 == bueno
         ResponseDeliverTx::new()
     }
@@ -217,12 +233,14 @@ async fn main() {
     // determine address for the proxy to bind to
     let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());
     // determine address of the database we are proxying for
-    let db_addr = args.next().unwrap_or_else(|| "mariadb:3306".to_string());
+    let db_uri_str = args.next().unwrap_or_else(|| "mysql://root:devpassword@mariadb:3306/mariadb".to_string());
+    let db_uri = db_uri_str.parse::<Uri>().unwrap();
     // determint address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
 
-    let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr).await;
+    let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_uri.host().unwrap().to_string()).await;
     info!("Proxy listening on: {}", bind_addr);
-    abci::run(abci_addr.parse().unwrap(), AbciApp::new(node_id));
+    abci::run(abci_addr.parse().unwrap(), AbciApp::new(node_id, Pool::new(db_uri_str).unwrap()));
     //server.run(ProxyHandler { node_id: node_id, http_client: Client::new() }).await;
+    
 }
