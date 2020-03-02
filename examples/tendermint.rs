@@ -16,8 +16,11 @@ use mariadb_proxy::{
     packet::{Packet, PacketType},
     packet_handler::PacketHandler,
 };
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sqlparser::{dialect::GenericDialect, parser::Parser};
 use tokio;
+
+const DELIMITER: &str = "!_!";
 
 // Convert incoming tx data to Sql string
 fn convert_tx(tx: &[u8]) -> String {
@@ -45,12 +48,14 @@ fn run_query_sync(sql: String) {
 }
 
 struct AbciApp {
+    node_id: String,
     sql: String,
 }
 
 impl AbciApp {
-    fn new() -> AbciApp {
+    fn new(node_id: String) -> AbciApp {
         AbciApp {
+            node_id: node_id,
             sql: String::from(""),
         }
     }
@@ -159,6 +164,7 @@ impl Application for AbciApp {
 }
 
 struct ProxyHandler {
+    node_id: String,
     http_client: Client<HttpConnector, Body>,
 }
 
@@ -173,6 +179,8 @@ impl PacketHandler for ProxyHandler {
             let sql = String::from_utf8(payload.to_vec()).expect("Invalid UTF-8");
             info!("SQL: {}", sql);
             let mut url: String = "http://localhost:26657/broadcast_tx_commit?tx=".to_owned();
+            url.push_str(&self.node_id);
+            url.push_str(DELIMITER);
             url.push_str(&sql);
             info!("Pushing to Tendermint: {}", url);
             let _fut = self.http_client.get(url.parse().unwrap()).then(|res| {
@@ -198,7 +206,12 @@ impl PacketHandler for ProxyHandler {
 async fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    info!("Tendermint MariaDB proxy... ");
+    let node_id: String = thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(16)
+        .collect();
+
+    info!("Tendermint MariaDB proxy (node_id={}) ... ", node_id);
 
     let mut args = std::env::args().skip(1);
     // determine address for the proxy to bind to
@@ -210,6 +223,6 @@ async fn main() {
 
     let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr).await;
     info!("Proxy listening on: {}", bind_addr);
-    abci::run(abci_addr.parse().unwrap(), AbciApp::new());
-    //server.run(ProxyHandler { http_client: Client::new() }).await;
+    abci::run(abci_addr.parse().unwrap(), AbciApp::new(node_id));
+    //server.run(ProxyHandler { node_id: node_id, http_client: Client::new() }).await;
 }
