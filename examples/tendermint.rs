@@ -55,6 +55,7 @@ impl Transaction {
     }
 }
 
+#[derive(Default)]
 struct AbciApp {
     node_id: String,
     sql_pool: Pool,
