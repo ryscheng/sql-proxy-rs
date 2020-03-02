@@ -18,6 +18,10 @@ use mariadb_proxy::{
     packet_handler::PacketHandler,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+}
 use sqlparser::{dialect::GenericDialect, parser::Parser};
 use tokio;
 
@@ -54,6 +58,10 @@ impl Transaction {
 struct AbciApp {
     node_id: String,
     sql_pool: Pool,
+    txn_queue: Vec<Transaction>,
+    app_hash: String,
+    hasher: Hasher,
+    block_height: i64
 }
 
 impl AbciApp {
@@ -61,6 +69,10 @@ impl AbciApp {
         AbciApp {
             node_id: node_id,
             sql_pool: sql_pool,
+            txn_queue: Vec::new(),
+            app_hash: "".to_string(),
+            hasher: DefaultHasher::new(),
+            block_height: 0,
         }
     }
 }
@@ -71,7 +83,17 @@ impl Application for AbciApp {
     /// to the application.
     fn info(&mut self, _req: &RequestInfo) -> ResponseInfo {
         debug!("ABCI: info()");
-        ResponseInfo::new()
+        let mut response = ResponseInfo::new();
+        for row in pool.prep_exec("SELECT MAX(block_height) AS max_height, app_hash  FROM `tendermint_blocks`;", ()).expect("SQL query failed to execute") {
+            let (height, app_hash) = from_row(row.unwrap());
+            self.block_height = height;
+            self.hasher = DefaultHasher::new();
+            self.app_hash = app_hash;
+            self.app_hash.hash(&mut self.hasher); // Hash chaining
+            response.set_last_block_height(self.block_height);
+            response.set_last_block_app_hash(self.app_hash.into_bytes());
+        }
+        response
     }
 
     /// Query Connection: Set options on the application (rarely used)
@@ -94,23 +116,6 @@ impl Application for AbciApp {
         ResponseInitChain::new()
     }
 
-    /// Consensus Connection: Called at the start of processing a block of transactions
-    /// The flow is:
-    /// begin_block()
-    ///   deliver_tx()  for each transaction in the block
-    /// end_block()
-    /// commit()
-    fn begin_block(&mut self, _req: &RequestBeginBlock) -> ResponseBeginBlock {
-        debug!("ABCI: begin_block()");
-        ResponseBeginBlock::new()
-    }
-
-    /// Consensus Connection: Called at the end of the block.  Often used to update the validator set.
-    fn end_block(&mut self, _req: &RequestEndBlock) -> ResponseEndBlock {
-        debug!("ABCI: end_block()");
-        ResponseEndBlock::new()
-    }
-
     // Validate transactions.  Rule: SQL string must be valid SQL
     fn check_tx(&mut self, req: &RequestCheckTx) -> ResponseCheckTx {
         debug!("ABCI: check_tx()");
@@ -119,7 +124,6 @@ impl Application for AbciApp {
 
         // Parse SQL
         info!("Checking Transaction: Sql query: {}", txn.sql);
-        // TODO: cover sql injection
         let dialect = GenericDialect {};
         match Parser::parse_sql(&dialect, txn.sql.clone()) {
             Ok(_val) => {
@@ -135,44 +139,75 @@ impl Application for AbciApp {
         return resp;
     }
 
+    /// Consensus Connection: Called at the start of processing a block of transactions
+    /// The flow is:
+    /// begin_block()
+    ///   deliver_tx()  for each transaction in the block
+    /// end_block()
+    /// commit()
+    fn begin_block(&mut self, _req: &RequestBeginBlock) -> ResponseBeginBlock {
+        debug!("ABCI: begin_block()");
+        self.hasher = DefaultHasher::new();
+        self.app_hash.hash(&mut self.hasher); // Hash chaining
+        self.block_height += 1;
+        self.txn_queue.clear();
+        self.txn_queue.push(Transaction::new("abci".to_string(), "START TRANSACTION;"));
+
+        // PostgresSQL:
+        //self.txn_queue.push(Transaction::new("abci".to_string(), "BEGIN;"));
+        ResponseBeginBlock::new()
+    }
+
     // Transaction = 1 SQL query
     // Process the SQL query
     fn deliver_tx(&mut self, req: &RequestDeliverTx) -> ResponseDeliverTx {
         info!("ABCI: deliver_tx()");
-
         let txn = Transaction::new(req.get_tx());
-        // Update state
-        info!("Forwarding SQL: {}", txn.sql);
+        txn.sql.hash(&mut self.hasher);
+        self.txn_queue.push(txn);
+        ResponseDeliverTx::new()
+    }
 
-        if txn.sql.len() <= 0 {
-            return ResponseDeliverTx::new();
+    /// Consensus Connection: Called at the end of the block.  Often used to update the validator set.
+    fn end_block(&mut self, req: &RequestEndBlock) -> ResponseEndBlock {
+        debug!("ABCI: end_block()");
+        self.block_height = req.get_height();
+        self.app_hash = self.hasher.finish().to_string();
+
+        self.txn_queue.push(Transaction::new(
+                "abci".to_string(), 
+                "CREATE TABLE IF NOT EXISTS `tendermint_blocks` (`block_height` in PRIMARY KEY, `app_hash` varchar(20))`;"));
+        self.txn_queue.push(Transaction::new(
+                "abci".to_string(),
+                "INSERT INTO `tendermint_blocks` VALUES (" + self.block_height.to_string() + ",`" + self.app_hash + "`);"));
+        self.txn_queue.push(Transaction::new("abci".to_string(), "COMMIT;"));
+        ResponseEndBlock::new()
+    }
+
+    fn commit(&mut self, _req: &RequestCommit) -> ResponseCommit {
+        debug!("ABCI: commit()");
+
+        // Create the response
+        let mut resp = ResponseCommit::new();
+        resp.set_data(self.app_hash.into_bytes()); // Return the app_hash to Tendermint to include in next block
+
+        // Generate the SQL transaction
+        let mut sql = "";
+        for txn in &self.txn_queue {
+            sql.push_str(txn.sql);
         }
+
+        // Update state
+        info!("Forwarding SQL: {}", sql);
 
         // https://docs.rs/mysql/17.0.0/mysql/struct.QueryResult.html
         let result = pool.prep_exec(sql, ()).expect("SQL query failed to execute");
         if self.node_id == txn.node_id {
-            // TODO:
+            // TODO: route responses back to client socket
         }
         info!("Query successfully executed");
+
         // Return default code 0 == bueno
-        ResponseDeliverTx::new()
-    }
-
-    fn commit(&mut self, _req: &RequestCommit) -> ResponseCommit {
-        info!("commit() {}", self.sql);
-
-        // Run Query
-        //Runtime::new().unwrap().block_on(run_query_async(&self.sql));
-        run_query_sync(self.sql.clone());
-
-        // Create the response
-        let mut resp = ResponseCommit::new();
-
-        // Set data so last state is included in the block
-        let bytes = self.sql.as_bytes();
-        resp.set_data(bytes.to_vec());
-
-        self.sql = String::from("");
         resp
     }
 }
@@ -208,7 +243,9 @@ impl PacketHandler for ProxyHandler {
             debug!("{:?} packet", p.packet_type());
         }
 
-        p.clone()
+        //TODO: dynamic route 'write' requests
+        //p.clone()
+        Packet { bytes: Vec::new() }; // Dropping packets for now
     }
 
     fn handle_response(&mut self, p: &Packet) -> Packet {
