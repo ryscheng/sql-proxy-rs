@@ -4,6 +4,7 @@ extern crate mariadb_proxy;
 extern crate log;
 
 use abci::*;
+use base64;
 use env_logger;
 use futures_util::future::FutureExt;
 use hyper::{
@@ -15,12 +16,13 @@ use mysql::{Pool, from_row};
 // use mysql_async;
 use mariadb_proxy::{
     packet::{Packet, PacketType},
-    packet_handler::PacketHandler,
+    packet_handler::{PacketHandler},
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sodiumoxide::crypto::hash;
 use std::{
-    io::{Error, ErrorKind},
+    error::{Error},
+    io,
 };
 use sqlparser::{dialect::GenericDialect, parser::Parser};
 use tokio;
@@ -40,18 +42,29 @@ impl Transaction {
         }
     }
 
-    fn from(bytes: &[u8]) -> Result<Transaction, Error> {
-        let txn_str = String::from_utf8(bytes.to_vec()).unwrap();
-        let tokens: Vec<&str> = txn_str.split(DELIMITER).collect();
+    fn decode(s: String) -> Result<Transaction, Box<dyn Error>>{
+        let bytes = base64::decode(&s)?;
+        let contents = String::from_utf8(bytes)?;
+        let tokens: Vec<&str> = contents.split(DELIMITER).collect();
         if tokens.len() < 2 {
-            Err(Error::new(ErrorKind::Other, "Missing node_id or SQL query in transaction"))
+            Err(Box::new(io::Error::new(io::ErrorKind::Other, "Missing node_id or SQL query in transaction")))
         } else {
             Ok(Transaction {
                 node_id: tokens[0].to_string(),
                 sql: tokens[1].to_string(),
             })
         }
+
     }
+
+    fn encode(&self) -> String {
+        let mut contents = String::from("");
+        contents.push_str(&self.node_id);
+        contents.push_str(DELIMITER);
+        contents.push_str(&self.sql);
+        base64::encode(&contents)
+    }
+
 }
 
 struct AbciApp {
@@ -123,23 +136,31 @@ impl Application for AbciApp {
         debug!("ABCI: check_tx()");
         let mut resp = ResponseCheckTx::new();
 
-        if let Ok(txn) = Transaction::from(req.get_tx()) {
-            info!("Checking Transaction: Sql query: {}", txn.sql);
-            // Parse SQL
-            let dialect = GenericDialect {};
-            if let Ok(_val) = Parser::parse_sql(&dialect, txn.sql.clone()) {
-                info!("Valid SQL");
-                resp.set_code(0);
+        if let Ok(enc_txn) = String::from_utf8(req.get_tx().to_vec()) {
+            if let Ok(txn) = Transaction::decode(enc_txn) {
+                info!("Checking Transaction: Sql query: {}", txn.sql);
+                // Parse SQL
+                let dialect = GenericDialect {};
+                if let Ok(_val) = Parser::parse_sql(&dialect, txn.sql.clone()) {
+                    info!("Valid SQL");
+                    resp.set_code(0);
+                } else {
+                    warn!("Invalid SQL");
+                    resp.set_code(1);  // Return error
+                    resp.set_log(String::from("Must be valid sql!"));
+                }
             } else {
-                warn!("Invalid SQL");
+                warn!("Unable to decode transaction");
                 resp.set_code(1);  // Return error
-                resp.set_log(String::from("Must be valid sql!"));
+                resp.set_log(String::from("Must be valid transaction!"));
             }
         } else {
             warn!("Invalid transaction");
             resp.set_code(1);  // Return error
             resp.set_log(String::from("Must be valid transaction!"));
         }
+
+        
 
         return resp;
     }
@@ -165,13 +186,19 @@ impl Application for AbciApp {
     // Process the SQL query
     fn deliver_tx(&mut self, req: &RequestDeliverTx) -> ResponseDeliverTx {
         info!("ABCI: deliver_tx()");
-        if let Ok(txn) = Transaction::from(req.get_tx()) {
-            let digest = hash::hash((self.app_hash.clone() + &txn.sql).as_bytes());     // Hash chaining
-            self.app_hash = String::from(format!("{:x?}", digest.as_ref()));    // Store as hexcode
-            self.txn_queue.push(txn);
+
+        if let Ok(enc_txn) = String::from_utf8(req.get_tx().to_vec()) {
+            if let Ok(txn) = Transaction::decode(enc_txn) {
+                let digest = hash::hash((self.app_hash.clone() + &txn.sql).as_bytes());     // Hash chaining
+                self.app_hash = String::from(format!("{:x?}", digest.as_ref()));    // Store as hexcode
+                self.txn_queue.push(txn);
+            } else {
+                warn!("unable to decode transaction at deliver_tx()");
+            }
         } else {
             warn!("invalid transaction at deliver_tx()");
         }
+
         ResponseDeliverTx::new()
     }
 
@@ -234,6 +261,7 @@ impl PacketHandler for ProxyHandler {
         if let Ok(PacketType::ComQuery) = p.packet_type() {
             let payload = &p.bytes[5..];
             let sql = String::from_utf8(payload.to_vec()).expect("Invalid UTF-8");
+            let txn = Transaction::new(self.node_id.clone(), sql.clone());
             info!("SQL: {}", sql);
 
             //dynamic route only write requests
@@ -245,9 +273,7 @@ impl PacketHandler for ProxyHandler {
                 let mut url: String = String::from("http://");
                 url.push_str(&self.tendermint_addr);
                 url.push_str("/broadcast_tx_commit?tx=");
-                url.push_str(&self.node_id);
-                url.push_str(DELIMITER);
-                url.push_str(&sql);
+                url.push_str(txn.encode().as_str());
                 info!("Pushing to Tendermint: {}", url);
                 let _fut = self.http_client.get(url.parse().unwrap()).then(|res| {
                     async move {
