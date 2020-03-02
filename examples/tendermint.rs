@@ -18,7 +18,7 @@ use mariadb_proxy::{
     packet_handler::PacketHandler,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use sodiumoxide::crypto::hash::sha512::{Digest, hash};
+use sodiumoxide::crypto::hash;
 use std::{
     io::{Error, ErrorKind},
 };
@@ -40,26 +40,25 @@ impl Transaction {
         }
     }
 
-    fn new(bytes: &[u8]) -> Result<Transaction, Error> {
+    fn from(bytes: &[u8]) -> Result<Transaction, Error> {
         let txn_str = String::from_utf8(bytes.to_vec()).unwrap();
-        let tokens = txn_str.split(DELIMITER).collect();
+        let tokens: Vec<&str> = txn_str.split(DELIMITER).collect();
         if tokens.len() < 2 {
             Err(Error::new(ErrorKind::Other, "Missing node_id or SQL query in transaction"))
         } else {
-            Transaction {
+            Ok(Transaction {
                 node_id: tokens[0].to_string(),
                 sql: tokens[1].to_string(),
-            }
+            })
         }
     }
 }
 
-#[derive(Default)]
 struct AbciApp {
     node_id: String,
     sql_pool: Pool,
     txn_queue: Vec<Transaction>,
-    block_height: i64
+    block_height: i64,
     app_hash: String,
 }
 
@@ -116,22 +115,25 @@ impl Application for AbciApp {
     fn check_tx(&mut self, req: &RequestCheckTx) -> ResponseCheckTx {
         debug!("ABCI: check_tx()");
         let mut resp = ResponseCheckTx::new();
-        let txn = Transaction::new(req.get_tx());
 
-        // Parse SQL
-        info!("Checking Transaction: Sql query: {}", txn.sql);
-        let dialect = GenericDialect {};
-        match Parser::parse_sql(&dialect, txn.sql.clone()) {
-            Ok(_val) => {
+        if let Ok(txn) = Transaction::from(req.get_tx()) {
+            info!("Checking Transaction: Sql query: {}", txn.sql);
+            // Parse SQL
+            let dialect = GenericDialect {};
+            if let Ok(_val) = Parser::parse_sql(&dialect, txn.sql.clone()) {
                 info!("Valid SQL");
                 resp.set_code(0);
-            }
-            Err(_e) => {
-                info!("Invalid SQL");
+            } else {
+                warn!("Invalid SQL");
                 resp.set_code(1);  // Return error
                 resp.set_log(String::from("Must be valid sql!"));
             }
+        } else {
+            warn!("Invalid transaction");
+            resp.set_code(1);  // Return error
+            resp.set_log(String::from("Must be valid transaction!"));
         }
+
         return resp;
     }
 
@@ -145,7 +147,7 @@ impl Application for AbciApp {
         debug!("ABCI: begin_block()");
         self.block_height += 1;
         self.txn_queue.clear();
-        self.txn_queue.push(Transaction::new("abci".to_string(), "START TRANSACTION;"));
+        self.txn_queue.push(Transaction::new("abci".to_string(), "START TRANSACTION;".to_string()));
 
         // PostgresSQL:
         //self.txn_queue.push(Transaction::new("abci".to_string(), "BEGIN;"));
@@ -156,9 +158,13 @@ impl Application for AbciApp {
     // Process the SQL query
     fn deliver_tx(&mut self, req: &RequestDeliverTx) -> ResponseDeliverTx {
         info!("ABCI: deliver_tx()");
-        let txn = Transaction::new(req.get_tx());
-        self.app_hash = hash(self.app_hash + txn.sql); // Hash chaining
-        self.txn_queue.push(txn);
+        if let Ok(txn) = Transaction::from(req.get_tx()) {
+            let digest = hash::hash((self.app_hash + &txn.sql).as_bytes());     // Hash chaining
+            self.app_hash = String::from(format!("{:x?}", digest.as_ref()));    // Store as hexcode
+            self.txn_queue.push(txn);
+        } else {
+            warn!("invalid transaction at deliver_tx()");
+        }
         ResponseDeliverTx::new()
     }
 
@@ -169,11 +175,11 @@ impl Application for AbciApp {
 
         self.txn_queue.push(Transaction::new(
                 "abci".to_string(), 
-                "CREATE TABLE IF NOT EXISTS `tendermint_blocks` (`block_height` in PRIMARY KEY, `app_hash` varchar(20))`;"));
+                "CREATE TABLE IF NOT EXISTS `tendermint_blocks` (`block_height` in PRIMARY KEY, `app_hash` varchar(20))`;".to_string()));
         self.txn_queue.push(Transaction::new(
                 "abci".to_string(),
-                "INSERT INTO `tendermint_blocks` VALUES (" + self.block_height.to_string() + ",`" + self.app_hash + "`);"));
-        self.txn_queue.push(Transaction::new("abci".to_string(), "COMMIT;"));
+                "INSERT INTO `tendermint_blocks` VALUES (".to_string() + &self.block_height.to_string() + ",`" + &self.app_hash + "`);"));
+        self.txn_queue.push(Transaction::new("abci".to_string(), "COMMIT;".to_string()));
         ResponseEndBlock::new()
     }
 
@@ -185,9 +191,9 @@ impl Application for AbciApp {
         resp.set_data(self.app_hash.into_bytes()); // Return the app_hash to Tendermint to include in next block
 
         // Generate the SQL transaction
-        let mut sql = "";
+        let mut sql = "".to_string();
         for txn in &self.txn_queue {
-            sql.push_str(txn.sql);
+            sql.push_str(&txn.sql);
         }
 
         // Update state
