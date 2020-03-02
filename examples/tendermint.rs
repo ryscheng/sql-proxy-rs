@@ -86,7 +86,7 @@ impl Application for AbciApp {
             self.block_height = height;
             self.app_hash = app_hash;
             response.set_last_block_height(self.block_height);
-            response.set_last_block_app_hash(self.app_hash.into_bytes());
+            response.set_last_block_app_hash(self.app_hash.clone().into_bytes());
         }
         response
     }
@@ -159,7 +159,7 @@ impl Application for AbciApp {
     fn deliver_tx(&mut self, req: &RequestDeliverTx) -> ResponseDeliverTx {
         info!("ABCI: deliver_tx()");
         if let Ok(txn) = Transaction::from(req.get_tx()) {
-            let digest = hash::hash((self.app_hash + &txn.sql).as_bytes());     // Hash chaining
+            let digest = hash::hash((self.app_hash.clone() + &txn.sql).as_bytes());     // Hash chaining
             self.app_hash = String::from(format!("{:x?}", digest.as_ref()));    // Store as hexcode
             self.txn_queue.push(txn);
         } else {
@@ -188,7 +188,7 @@ impl Application for AbciApp {
 
         // Create the response
         let mut resp = ResponseCommit::new();
-        resp.set_data(self.app_hash.into_bytes()); // Return the app_hash to Tendermint to include in next block
+        resp.set_data(self.app_hash.clone().into_bytes()); // Return the app_hash to Tendermint to include in next block
 
         // Generate the SQL transaction
         let mut sql = "".to_string();
@@ -200,7 +200,7 @@ impl Application for AbciApp {
         info!("Forwarding SQL: {}", sql);
 
         // https://docs.rs/mysql/17.0.0/mysql/struct.QueryResult.html
-        let result = self.sql_pool.prep_exec(sql, ()).expect("SQL query failed to execute");
+        let _result = self.sql_pool.prep_exec(sql, ()).expect("SQL query failed to execute");
         // TODO: route responses back to client socket
         //if self.node_id == txn.node_id {
         //}
