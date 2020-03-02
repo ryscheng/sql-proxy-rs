@@ -226,25 +226,32 @@ impl PacketHandler for ProxyHandler {
             let payload = &p.bytes[5..];
             let sql = String::from_utf8(payload.to_vec()).expect("Invalid UTF-8");
             info!("SQL: {}", sql);
-            let mut url: String = "http://localhost:26657/broadcast_tx_commit?tx=".to_owned();
-            url.push_str(&self.node_id);
-            url.push_str(DELIMITER);
-            url.push_str(&sql);
-            info!("Pushing to Tendermint: {}", url);
-            let _fut = self.http_client.get(url.parse().unwrap()).then(|res| {
-                async move {
-                    let response = res.unwrap();
-                    debug!("Response: {}", response.status());
-                    debug!("Headers: {:#?}\n", response.headers());
-                }
-            });
-        } else {
-            debug!("{:?} packet", p.packet_type());
+
+            //dynamic route only write requests
+            let lower_sql = sql.to_lowercase();
+            if lower_sql.contains("create") || 
+                    lower_sql.contains("insert") || 
+                    lower_sql.contains("update") || 
+                    lower_sql.contains("delete") {
+                let mut url: String = "http://localhost:26657/broadcast_tx_commit?tx=".to_owned();
+                url.push_str(&self.node_id);
+                url.push_str(DELIMITER);
+                url.push_str(&sql);
+                info!("Pushing to Tendermint: {}", url);
+                let _fut = self.http_client.get(url.parse().unwrap()).then(|res| {
+                    async move {
+                        let response = res.unwrap();
+                        debug!("Response: {}", response.status());
+                        debug!("Headers: {:#?}\n", response.headers());
+                    }
+                });
+                return Packet { bytes: Vec::new() }; // Dropping packets for now
+            }
         }
 
-        //TODO: dynamic route 'write' requests
-        //p.clone()
-        Packet { bytes: Vec::new() } // Dropping packets for now
+        // Default case: forward packet
+        debug!("{:?} packet", p.packet_type());
+        p.clone()
     }
 
     fn handle_response(&mut self, p: &Packet) -> Packet {
@@ -267,7 +274,7 @@ async fn main() {
     // determine address for the proxy to bind to
     let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());
     // determine address of the database we are proxying for
-    let db_uri_str = args.next().unwrap_or_else(|| "mysql://root:devpassword@mariadb:3306/mariadb".to_string());
+    let db_uri_str = args.next().unwrap_or_else(|| "mysql://root:devpassword@mariadb:3306/testdb".to_string());
     let db_uri = db_uri_str.parse::<Uri>().unwrap();
     // determint address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
