@@ -81,13 +81,20 @@ impl Application for AbciApp {
     fn info(&mut self, _req: &RequestInfo) -> ResponseInfo {
         debug!("ABCI: info()");
         let mut response = ResponseInfo::new();
-        for row in self.sql_pool.prep_exec("SELECT MAX(block_height) AS max_height, app_hash  FROM `tendermint_blocks`;", ()).expect("SQL query failed to execute") {
-            let (height, app_hash) = from_row(row.unwrap());
-            self.block_height = height;
-            self.app_hash = app_hash;
-            response.set_last_block_height(self.block_height);
-            response.set_last_block_app_hash(self.app_hash.clone().into_bytes());
+        let sql_query = "SELECT MAX(block_height) AS max_height, app_hash  FROM `tendermint_blocks`;";
+        match self.sql_pool.prep_exec(sql_query, ()) {
+            Ok(rows) => {
+                for row in rows {
+                    let (height, app_hash) = from_row(row.unwrap());
+                    self.block_height = height;
+                    self.app_hash = app_hash;
+                    response.set_last_block_height(self.block_height);
+                    response.set_last_block_app_hash(self.app_hash.clone().into_bytes());
+                }
+            },
+            Err(e) => warn!("SQL query failed to execute: {}", e),
         }
+
         response
     }
 
@@ -200,7 +207,8 @@ impl Application for AbciApp {
         info!("Forwarding SQL: {}", sql);
 
         // https://docs.rs/mysql/17.0.0/mysql/struct.QueryResult.html
-        let _result = self.sql_pool.prep_exec(sql, ()).expect("SQL query failed to execute");
+        // TODO: commit to database
+        //let _result = self.sql_pool.prep_exec(sql, ()).expect("SQL query failed to execute");
         // TODO: route responses back to client socket
         //if self.node_id == txn.node_id {
         //}
@@ -213,6 +221,7 @@ impl Application for AbciApp {
 
 struct ProxyHandler {
     node_id: String,
+    tendermint_addr: String,
     http_client: Client<HttpConnector, Body>,
 }
 
@@ -233,16 +242,24 @@ impl PacketHandler for ProxyHandler {
                     lower_sql.contains("insert") || 
                     lower_sql.contains("update") || 
                     lower_sql.contains("delete") {
-                let mut url: String = "http://localhost:26657/broadcast_tx_commit?tx=".to_owned();
+                let mut url: String = String::from("http://");
+                url.push_str(&self.tendermint_addr);
+                url.push_str("/broadcast_tx_commit?tx=");
                 url.push_str(&self.node_id);
                 url.push_str(DELIMITER);
                 url.push_str(&sql);
                 info!("Pushing to Tendermint: {}", url);
                 let _fut = self.http_client.get(url.parse().unwrap()).then(|res| {
                     async move {
-                        let response = res.unwrap();
-                        debug!("Response: {}", response.status());
-                        debug!("Headers: {:#?}\n", response.headers());
+                        match res {
+                            Ok(response) => {
+                                debug!("Response: {}", response.status());
+                                debug!("Headers: {:#?}\n", response.headers());
+                            },
+                            Err(e) => {
+                                warn!("Unable to forward to Tendermint: {}", e);
+                            },
+                        }
                     }
                 });
                 return Packet { bytes: Vec::new() }; // Dropping packets for now
@@ -276,12 +293,14 @@ async fn main() {
     // determine address of the database we are proxying for
     let db_uri_str = args.next().unwrap_or_else(|| "mysql://root:devpassword@mariadb:3306/testdb".to_string());
     let db_uri = db_uri_str.parse::<Uri>().unwrap();
+    let db_addr = db_uri.host().unwrap().to_string() + ":" + &db_uri.port().unwrap().to_string();
     // determint address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
+    let tendermint_addr = args.next().unwrap_or("tendermint:26657".to_string());
 
     // Start proxy server
-    let handler = ProxyHandler { node_id: node_id.clone(), http_client: Client::new() };
-    let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_uri.host().unwrap().to_string()).await;
+    let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
+    let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
     tokio::spawn(async move {
         info!("Proxy listening on: {}", bind_addr);
         server.run(handler).await;
