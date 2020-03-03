@@ -21,5 +21,5 @@ docker run --rm -it \
   -v "/tmp/tendermint:/tendermint" \
   --name tendermint \
   tendermint/tendermint:v0.32.8 \
-  node --proxy_app=tcp://rust-dev:26658
+  node --proxy_app=tcp://rust-dev:26658 --consensus.create_empty_blocks=false --rpc.laddr=tcp://0.0.0.0:26657
   

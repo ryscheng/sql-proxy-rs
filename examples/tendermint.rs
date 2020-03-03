@@ -5,13 +5,7 @@ extern crate log;
 
 use abci::*;
 use env_logger;
-use futures::executor::block_on;
-use futures_util::future::FutureExt;
-use hyper::{
-    body::Body,
-    client::{Client, HttpConnector},
-    Uri,
-};
+use http::uri::Uri;
 use mysql::{Pool, from_row};
 // use mysql_async;
 use mariadb_proxy::{
@@ -19,6 +13,7 @@ use mariadb_proxy::{
     packet_handler::{PacketHandler},
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use reqwest;
 use sodiumoxide::crypto::hash;
 use std::{
     io::{Error, ErrorKind},
@@ -93,7 +88,7 @@ impl Application for AbciApp {
     /// return the last know state so Tendermint can determine if it needs to replay blocks
     /// to the application.
     fn info(&mut self, _req: &RequestInfo) -> ResponseInfo {
-        debug!("ABCI: info()");
+        debug!("ABCI:info()");
         let mut response = ResponseInfo::new();
         let sql_query = "SELECT MAX(block_height) AS max_height, app_hash  FROM `tendermint_blocks`;";
         match self.sql_pool.prep_exec(sql_query, ()) {
@@ -114,54 +109,52 @@ impl Application for AbciApp {
 
     /// Query Connection: Set options on the application (rarely used)
     fn set_option(&mut self, _req: &RequestSetOption) -> ResponseSetOption {
-        debug!("ABCI: set_option()");
+        debug!("ABCI:set_option()");
         ResponseSetOption::new()
     }
 
     /// Query Connection: Query your application. This usually resolves through a merkle tree holding
     /// the state of the app.
     fn query(&mut self, _req: &RequestQuery) -> ResponseQuery {
-        debug!("ABCI: query()");
+        debug!("ABCI:query()");
         ResponseQuery::new()
     }
 
     /// Consensus Connection:  Called once on startup. Usually used to establish initial (genesis)
     /// state.
     fn init_chain(&mut self, _req: &RequestInitChain) -> ResponseInitChain {
-        debug!("ABCI: init_chain()");
+        debug!("ABCI:init_chain()");
         ResponseInitChain::new()
     }
 
     // Validate transactions.  Rule: SQL string must be valid SQL
     fn check_tx(&mut self, req: &RequestCheckTx) -> ResponseCheckTx {
-        debug!("ABCI: check_tx()");
+        debug!("ABCI:check_tx()");
         let mut resp = ResponseCheckTx::new();
 
         if let Ok(enc_txn) = String::from_utf8(req.get_tx().to_vec()) {
             if let Ok(txn) = Transaction::decode(enc_txn) {
-                info!("Checking Transaction: Sql query: {}", txn.sql);
+                info!("ABCI:check_tx(): Checking Transaction: Sql query: {}", txn.sql);
                 // Parse SQL
                 let dialect = GenericDialect {};
                 if let Ok(_val) = Parser::parse_sql(&dialect, txn.sql.clone()) {
-                    info!("Valid SQL");
+                    info!("ABCI:check_tx(): Valid SQL");
                     resp.set_code(0);
                 } else {
-                    warn!("Invalid SQL");
+                    warn!("ABCI:check_tx(): Invalid SQL");
                     resp.set_code(1);  // Return error
                     resp.set_log(String::from("Must be valid sql!"));
                 }
             } else {
-                warn!("Unable to decode transaction");
+                warn!("ABCI:check_tx(): Unable to decode transaction");
                 resp.set_code(1);  // Return error
                 resp.set_log(String::from("Must be valid transaction!"));
             }
         } else {
-            warn!("Invalid transaction");
+            warn!("ABCI:check_tx(): Invalid transaction");
             resp.set_code(1);  // Return error
             resp.set_log(String::from("Must be valid transaction!"));
         }
-
-        
 
         return resp;
     }
@@ -173,7 +166,7 @@ impl Application for AbciApp {
     /// end_block()
     /// commit()
     fn begin_block(&mut self, _req: &RequestBeginBlock) -> ResponseBeginBlock {
-        debug!("ABCI: begin_block()");
+        debug!("ABCI:begin_block()");
         self.block_height += 1;
         self.txn_queue.clear();
         self.txn_queue.push(Transaction::new("abci".to_string(), "START TRANSACTION;".to_string()));
@@ -186,13 +179,14 @@ impl Application for AbciApp {
     // Transaction = 1 SQL query
     // Process the SQL query
     fn deliver_tx(&mut self, req: &RequestDeliverTx) -> ResponseDeliverTx {
-        info!("ABCI: deliver_tx()");
+        debug!("ABCI:deliver_tx()");
 
         if let Ok(enc_txn) = String::from_utf8(req.get_tx().to_vec()) {
             if let Ok(txn) = Transaction::decode(enc_txn) {
                 let digest = hash::hash((self.app_hash.clone() + &txn.sql).as_bytes());     // Hash chaining
                 self.app_hash = String::from(format!("{:x?}", digest.as_ref()));    // Store as hexcode
                 self.txn_queue.push(txn);
+                info!("ABCI:deliver_tx(): Pushing txn. app_hash={}", self.app_hash);
             } else {
                 warn!("unable to decode transaction at deliver_tx()");
             }
@@ -205,7 +199,7 @@ impl Application for AbciApp {
 
     /// Consensus Connection: Called at the end of the block.  Often used to update the validator set.
     fn end_block(&mut self, req: &RequestEndBlock) -> ResponseEndBlock {
-        debug!("ABCI: end_block()");
+        debug!("ABCI:end_block()");
         self.block_height = req.get_height();
 
         self.txn_queue.push(Transaction::new(
@@ -219,7 +213,7 @@ impl Application for AbciApp {
     }
 
     fn commit(&mut self, _req: &RequestCommit) -> ResponseCommit {
-        debug!("ABCI: commit()");
+        debug!("ABCI:commit()");
 
         // Create the response
         let mut resp = ResponseCommit::new();
@@ -232,7 +226,7 @@ impl Application for AbciApp {
         }
 
         // Update state
-        info!("Forwarding SQL: {}", sql);
+        info!("ABCI:commit(): Forwarding SQL: {}", sql);
 
         // https://docs.rs/mysql/17.0.0/mysql/struct.QueryResult.html
         // TODO: commit to database
@@ -240,7 +234,7 @@ impl Application for AbciApp {
         // TODO: route responses back to client socket
         //if self.node_id == txn.node_id {
         //}
-        info!("Query successfully executed");
+        info!("ABCI:commit(): Query successfully executed");
 
         // Return default code 0 == bueno
         resp
@@ -250,7 +244,6 @@ impl Application for AbciApp {
 struct ProxyHandler {
     node_id: String,
     tendermint_addr: String,
-    http_client: Client<HttpConnector, Body>,
 }
 
 // Just forward the packet
@@ -273,23 +266,19 @@ impl PacketHandler for ProxyHandler {
                     lower_sql.contains("delete") {
                 let mut url: String = String::from("http://");
                 url.push_str(&self.tendermint_addr);
-                url.push_str("/broadcast_tx_commit?tx=");
+                url.push_str("/broadcast_tx_commit?tx=\"");
                 url.push_str(txn.encode().as_str());
+                url.push_str("\"");
                 info!("Pushing to Tendermint: {}", url);
-                let fut = self.http_client.get(url.parse().unwrap()).then(|res| {
-                    async move {
-                        match res {
-                            Ok(response) => {
-                                info!("Response: {}", response.status());
-                                info!("Headers: {:#?}\n", response.headers());
-                            },
-                            Err(e) => {
-                                warn!("Unable to forward to Tendermint: {}", e);
-                            },
-                        }
-                    }
-                });
-                block_on(fut);
+                match reqwest::blocking::get(&url) {
+                    Ok(response) => {
+                      info!("Response: {}", response.status());
+                      info!("Headers: {:#?}\n", response.headers());
+                    },
+                    Err(e) => {
+                      warn!("Unable to forward to Tendermint: {}", e);
+                    },
+                };
                 return Packet { bytes: Vec::new() }; // Dropping packets for now
             }
         }
@@ -321,13 +310,13 @@ async fn main() {
     // determine address of the database we are proxying for
     let db_uri_str = args.next().unwrap_or_else(|| "mysql://root:devpassword@mariadb:3306/testdb".to_string());
     let db_uri = db_uri_str.parse::<Uri>().unwrap();
-    let db_addr = db_uri.host().unwrap().to_string() + ":" + &db_uri.port().unwrap().to_string();
+    let db_addr = db_uri.host().unwrap().to_string() + ":" + &db_uri.port_u16().unwrap().to_string();
     // determint address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
     let tendermint_addr = args.next().unwrap_or("tendermint:26657".to_string());
 
     // Start proxy server
-    let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
+    let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr };
     let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
     tokio::spawn(async move {
         info!("Proxy listening on: {}", bind_addr);
