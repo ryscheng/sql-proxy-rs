@@ -5,6 +5,7 @@ extern crate log;
 
 use abci::*;
 use env_logger;
+use hex;
 use http::uri::Uri;
 use mysql::{Pool, from_row};
 // use mysql_async;
@@ -184,7 +185,7 @@ impl Application for AbciApp {
         if let Ok(enc_txn) = String::from_utf8(req.get_tx().to_vec()) {
             if let Ok(txn) = Transaction::decode(enc_txn) {
                 let digest = hash::hash((self.app_hash.clone() + &txn.sql).as_bytes());     // Hash chaining
-                self.app_hash = String::from(format!("{:x?}", digest.as_ref()));    // Store as hexcode
+                self.app_hash = hex::encode(digest.as_ref()); // Store as hexcode
                 self.txn_queue.push(txn);
                 info!("ABCI:deliver_tx(): Pushing txn. app_hash={}", self.app_hash);
             } else {
@@ -223,6 +224,7 @@ impl Application for AbciApp {
         let mut sql = "".to_string();
         for txn in &self.txn_queue {
             sql.push_str(&txn.sql);
+            sql.push_str(" ");
         }
 
         // Update state

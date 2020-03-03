@@ -16,6 +16,7 @@ tokio = { version = "0.2", features = ["full"] }
 
 [dev-dependencies]
 abci = "0.6"
+hex = "0.4"
 http = "0.2"
 mysql = "17.0"
 mysql_async = "0.21"
