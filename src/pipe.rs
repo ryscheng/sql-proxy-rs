@@ -1,8 +1,8 @@
+use futures::lock::{Mutex};
 use std::{
     io::{Error, ErrorKind},
-    sync::{Arc, Mutex},
+    sync::{Arc},
 };
-
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
 
 use crate::{
@@ -76,7 +76,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 trace!("[{}:{:?}]: Processing packet", self.name, self.direction);
                 {
                     // Scope for self.packet_handler Mutex
-                    let mut h = self.packet_handler.lock().unwrap();
+                    let mut h = self.packet_handler.lock().await;
                     let transformed_packet = match self.direction {
                         Direction::Forward => h.handle_request(&packet),
                         Direction::Backward => h.handle_response(&packet),
