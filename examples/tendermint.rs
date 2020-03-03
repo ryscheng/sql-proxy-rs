@@ -4,8 +4,8 @@ extern crate mariadb_proxy;
 extern crate log;
 
 use abci::*;
-use base64;
 use env_logger;
+use futures::executor::block_on;
 use futures_util::future::FutureExt;
 use hyper::{
     body::Body,
@@ -21,11 +21,11 @@ use mariadb_proxy::{
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sodiumoxide::crypto::hash;
 use std::{
-    error::{Error},
-    io,
+    io::{Error, ErrorKind},
 };
 use sqlparser::{dialect::GenericDialect, parser::Parser};
 use tokio;
+use urlencoding;
 
 const DELIMITER: &str = "!_!";
 
@@ -42,19 +42,20 @@ impl Transaction {
         }
     }
 
-    fn decode(s: String) -> Result<Transaction, Box<dyn Error>>{
-        let bytes = base64::decode(&s)?;
-        let contents = String::from_utf8(bytes)?;
-        let tokens: Vec<&str> = contents.split(DELIMITER).collect();
-        if tokens.len() < 2 {
-            Err(Box::new(io::Error::new(io::ErrorKind::Other, "Missing node_id or SQL query in transaction")))
+    fn decode(s: String) -> Result<Transaction, Error>{
+        if let Ok(contents) = urlencoding::decode(&s) {
+            let tokens: Vec<&str> = contents.split(DELIMITER).collect();
+            if tokens.len() < 2 {
+                Err(Error::new(ErrorKind::Other, "Missing node_id or SQL query in transaction"))
+            } else {
+                Ok(Transaction {
+                    node_id: tokens[0].to_string(),
+                    sql: tokens[1].to_string(),
+                })
+            }
         } else {
-            Ok(Transaction {
-                node_id: tokens[0].to_string(),
-                sql: tokens[1].to_string(),
-            })
+            return Err(Error::new(ErrorKind::Other, "Unable to decode transaction"))
         }
-
     }
 
     fn encode(&self) -> String {
@@ -62,7 +63,7 @@ impl Transaction {
         contents.push_str(&self.node_id);
         contents.push_str(DELIMITER);
         contents.push_str(&self.sql);
-        base64::encode(&contents)
+        urlencoding::encode(&contents)
     }
 
 }
@@ -275,12 +276,12 @@ impl PacketHandler for ProxyHandler {
                 url.push_str("/broadcast_tx_commit?tx=");
                 url.push_str(txn.encode().as_str());
                 info!("Pushing to Tendermint: {}", url);
-                let _fut = self.http_client.get(url.parse().unwrap()).then(|res| {
+                let fut = self.http_client.get(url.parse().unwrap()).then(|res| {
                     async move {
                         match res {
                             Ok(response) => {
-                                debug!("Response: {}", response.status());
-                                debug!("Headers: {:#?}\n", response.headers());
+                                info!("Response: {}", response.status());
+                                info!("Headers: {:#?}\n", response.headers());
                             },
                             Err(e) => {
                                 warn!("Unable to forward to Tendermint: {}", e);
@@ -288,6 +289,7 @@ impl PacketHandler for ProxyHandler {
                         }
                     }
                 });
+                block_on(fut);
                 return Packet { bytes: Vec::new() }; // Dropping packets for now
             }
         }

@@ -7,7 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-base64 = "0.11"
 byteorder = "1.0"
 env_logger = "0.7"
 futures = "0.3"
@@ -23,3 +22,4 @@ mysql_async = "0.21"
 rand = "0.7"
 sodiumoxide = "0.2"
 sqlparser = "0.5"
+urlencoding = "1.0"
