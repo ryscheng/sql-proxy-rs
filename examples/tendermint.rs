@@ -14,7 +14,7 @@ use mariadb_proxy::{
     packet_handler::{PacketHandler},
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use reqwest;
+use reqwest::blocking::{Client};
 use sodiumoxide::crypto::hash;
 use std::{
     io::{Error, ErrorKind},
@@ -246,6 +246,7 @@ impl Application for AbciApp {
 struct ProxyHandler {
     node_id: String,
     tendermint_addr: String,
+    http_client: Client,
 }
 
 // Just forward the packet
@@ -272,7 +273,7 @@ impl PacketHandler for ProxyHandler {
                 url.push_str(txn.encode().as_str());
                 url.push_str("\"");
                 info!("Pushing to Tendermint: {}", url);
-                match reqwest::blocking::get(&url) {
+                match self.http_client.get(&url).send() {
                     Ok(response) => {
                       info!("Response: {}", response.status());
                       info!("Headers: {:#?}\n", response.headers());
@@ -318,7 +319,7 @@ async fn main() {
     let tendermint_addr = args.next().unwrap_or("tendermint:26657".to_string());
 
     // Start proxy server
-    let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr };
+    let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
     let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
     tokio::spawn(async move {
         info!("Proxy listening on: {}", bind_addr);
