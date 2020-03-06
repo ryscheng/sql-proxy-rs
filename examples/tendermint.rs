@@ -7,14 +7,14 @@ use abci::*;
 use env_logger;
 use hex;
 use http::uri::Uri;
-use mysql::{Pool, from_row};
+use mysql::{Pool, from_row, from_value, Value};
 // use mysql_async;
 use mariadb_proxy::{
     packet::{Packet, PacketType},
     packet_handler::{PacketHandler},
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use reqwest::blocking::{Client};
+// use reqwest::blocking::{Client};
 use sodiumoxide::crypto::hash;
 use std::{
     io::{Error, ErrorKind},
@@ -91,13 +91,22 @@ impl Application for AbciApp {
     fn info(&mut self, _req: &RequestInfo) -> ResponseInfo {
         debug!("ABCI:info()");
         let mut response = ResponseInfo::new();
-        let sql_query = "SELECT MAX(block_height) AS max_height, app_hash  FROM `tendermint_blocks`;";
+        let sql_query = "SELECT MAX(block_height) AS max_height, app_hash FROM tendermint_blocks;";
         match self.sql_pool.prep_exec(sql_query, ()) {
             Ok(rows) => {
                 for row in rows {
                     let (height, app_hash) = from_row(row.unwrap());
-                    self.block_height = height;
-                    self.app_hash = app_hash;
+
+                    // Check for null values when tendermint_blocks table is empty
+                    self.block_height = match height {
+                        Value::NULL => 0,
+                        _ => from_value::<i64>(height)
+                    };
+                    self.app_hash = match app_hash {
+                        Value::NULL => "".to_string(),
+                        _ => from_value::<String>(app_hash)
+                    };
+
                     response.set_last_block_height(self.block_height);
                     response.set_last_block_app_hash(self.app_hash.clone().into_bytes());
                 }
@@ -170,7 +179,6 @@ impl Application for AbciApp {
         debug!("ABCI:begin_block()");
         self.block_height += 1;
         self.txn_queue.clear();
-        self.txn_queue.push(Transaction::new("abci".to_string(), "START TRANSACTION;".to_string()));
 
         // PostgresSQL:
         //self.txn_queue.push(Transaction::new("abci".to_string(), "BEGIN;"));
@@ -201,15 +209,17 @@ impl Application for AbciApp {
     /// Consensus Connection: Called at the end of the block.  Often used to update the validator set.
     fn end_block(&mut self, req: &RequestEndBlock) -> ResponseEndBlock {
         debug!("ABCI:end_block()");
+
         self.block_height = req.get_height();
 
+        // Add mandatory transactions to queue
         self.txn_queue.push(Transaction::new(
                 "abci".to_string(), 
-                "CREATE TABLE IF NOT EXISTS `tendermint_blocks` (`block_height` in PRIMARY KEY, `app_hash` varchar(20))`;".to_string()));
+                "CREATE TABLE IF NOT EXISTS tendermint_blocks (block_height int PRIMARY KEY, app_hash varchar(20));".to_string()));
         self.txn_queue.push(Transaction::new(
-                "abci".to_string(),
-                "INSERT INTO `tendermint_blocks` VALUES (".to_string() + &self.block_height.to_string() + ",`" + &self.app_hash + "`);"));
-        self.txn_queue.push(Transaction::new("abci".to_string(), "COMMIT;".to_string()));
+            "abci".to_string(),
+            "INSERT INTO tendermint_blocks VALUES (".to_string() + &self.block_height.to_string() + ",\"" + &self.app_hash + "\");"));
+
         ResponseEndBlock::new()
     }
 
@@ -220,19 +230,17 @@ impl Application for AbciApp {
         let mut resp = ResponseCommit::new();
         resp.set_data(self.app_hash.clone().into_bytes()); // Return the app_hash to Tendermint to include in next block
 
-        // Generate the SQL transaction
-        let mut sql = "".to_string();
+        // Generate SQL transaction
+        let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
+    
         for txn in &self.txn_queue {
-            sql.push_str(&txn.sql);
-            sql.push_str(" ");
+            info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
+            tx.prep_exec(&txn.sql, ()).unwrap();
         }
 
         // Update state
-        info!("ABCI:commit(): Forwarding SQL: {}", sql);
+        tx.commit().unwrap();
 
-        // https://docs.rs/mysql/17.0.0/mysql/struct.QueryResult.html
-        // TODO: commit to database
-        //let _result = self.sql_pool.prep_exec(sql, ()).expect("SQL query failed to execute");
         // TODO: route responses back to client socket
         //if self.node_id == txn.node_id {
         //}
@@ -246,7 +254,7 @@ impl Application for AbciApp {
 struct ProxyHandler {
     node_id: String,
     tendermint_addr: String,
-    http_client: Client,
+    // http_client: Client,
 }
 
 // Just forward the packet
@@ -273,15 +281,15 @@ impl PacketHandler for ProxyHandler {
                 url.push_str(txn.encode().as_str());
                 url.push_str("\"");
                 info!("Pushing to Tendermint: {}", url);
-                match self.http_client.get(&url).send() {
-                    Ok(response) => {
-                      info!("Response: {}", response.status());
-                      info!("Headers: {:#?}\n", response.headers());
-                    },
-                    Err(e) => {
-                      warn!("Unable to forward to Tendermint: {}", e);
-                    },
-                };
+                // match self.http_client.get(&url).send() {
+                //     Ok(response) => {
+                //       info!("Response: {}", response.status());
+                //       info!("Headers: {:#?}\n", response.headers());
+                //     },
+                //     Err(e) => {
+                //       warn!("Unable to forward to Tendermint: {}", e);
+                //     },
+                // };
                 return Packet { bytes: Vec::new() }; // Dropping packets for now
             }
         }
@@ -319,7 +327,8 @@ async fn main() {
     let tendermint_addr = args.next().unwrap_or("tendermint:26657".to_string());
 
     // Start proxy server
-    let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
+    // let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
+    let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr };
     let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
     tokio::spawn(async move {
         info!("Proxy listening on: {}", bind_addr);
