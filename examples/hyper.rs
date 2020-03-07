@@ -2,9 +2,7 @@
 extern crate log;
 
 use futures::executor::block_on;
-use hyper::{
-    client::{Client},
-};
+use hyper::client::Client;
 
 fn run() {
     let url: String = String::from("http://httpbin.org/ip");
@@ -16,10 +14,10 @@ fn run() {
             Ok(response) => {
                 info!("Response: {}", response.status());
                 info!("Headers: {:#?}\n", response.headers());
-            },
+            }
             Err(e) => {
                 warn!("Unable to forward to Tendermint: {}", e);
-            },
+            }
         }
     });
 }

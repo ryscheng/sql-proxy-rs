@@ -7,19 +7,17 @@ use abci::*;
 use env_logger;
 use hex;
 use http::uri::Uri;
-use mysql::{Pool, from_row, from_value, Value};
+use mysql::{from_row, from_value, Pool, Value};
 // use mysql_async;
 use mariadb_proxy::{
     packet::{Packet, PacketType},
-    packet_handler::{PacketHandler},
+    packet_handler::PacketHandler,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 // use reqwest::blocking::{Client};
 use sodiumoxide::crypto::hash;
-use std::{
-    io::{Error, ErrorKind},
-};
 use sqlparser::{dialect::GenericDialect, parser::Parser};
+use std::io::{Error, ErrorKind};
 use tokio;
 use urlencoding;
 
@@ -38,11 +36,14 @@ impl Transaction {
         }
     }
 
-    fn decode(s: String) -> Result<Transaction, Error>{
+    fn decode(s: String) -> Result<Transaction, Error> {
         if let Ok(contents) = urlencoding::decode(&s) {
             let tokens: Vec<&str> = contents.split(DELIMITER).collect();
             if tokens.len() < 2 {
-                Err(Error::new(ErrorKind::Other, "Missing node_id or SQL query in transaction"))
+                Err(Error::new(
+                    ErrorKind::Other,
+                    "Missing node_id or SQL query in transaction",
+                ))
             } else {
                 Ok(Transaction {
                     node_id: tokens[0].to_string(),
@@ -50,7 +51,7 @@ impl Transaction {
                 })
             }
         } else {
-            return Err(Error::new(ErrorKind::Other, "Unable to decode transaction"))
+            return Err(Error::new(ErrorKind::Other, "Unable to decode transaction"));
         }
     }
 
@@ -61,7 +62,6 @@ impl Transaction {
         contents.push_str(&self.sql);
         urlencoding::encode(&contents)
     }
-
 }
 
 struct AbciApp {
@@ -100,17 +100,17 @@ impl Application for AbciApp {
                     // Check for null values when tendermint_blocks table is empty
                     self.block_height = match height {
                         Value::NULL => 0,
-                        _ => from_value::<i64>(height)
+                        _ => from_value::<i64>(height),
                     };
                     self.app_hash = match app_hash {
                         Value::NULL => "".to_string(),
-                        _ => from_value::<String>(app_hash)
+                        _ => from_value::<String>(app_hash),
                     };
 
                     response.set_last_block_height(self.block_height);
                     response.set_last_block_app_hash(self.app_hash.clone().into_bytes());
                 }
-            },
+            }
             Err(e) => warn!("SQL query failed to execute: {}", e),
         }
 
@@ -144,7 +144,10 @@ impl Application for AbciApp {
 
         if let Ok(enc_txn) = String::from_utf8(req.get_tx().to_vec()) {
             if let Ok(txn) = Transaction::decode(enc_txn) {
-                info!("ABCI:check_tx(): Checking Transaction: Sql query: {}", txn.sql);
+                info!(
+                    "ABCI:check_tx(): Checking Transaction: Sql query: {}",
+                    txn.sql
+                );
                 // Parse SQL
                 let dialect = GenericDialect {};
                 if let Ok(_val) = Parser::parse_sql(&dialect, txn.sql.clone()) {
@@ -152,17 +155,17 @@ impl Application for AbciApp {
                     resp.set_code(0);
                 } else {
                     warn!("ABCI:check_tx(): Invalid SQL");
-                    resp.set_code(1);  // Return error
+                    resp.set_code(1); // Return error
                     resp.set_log(String::from("Must be valid sql!"));
                 }
             } else {
                 warn!("ABCI:check_tx(): Unable to decode transaction");
-                resp.set_code(1);  // Return error
+                resp.set_code(1); // Return error
                 resp.set_log(String::from("Must be valid transaction!"));
             }
         } else {
             warn!("ABCI:check_tx(): Invalid transaction");
-            resp.set_code(1);  // Return error
+            resp.set_code(1); // Return error
             resp.set_log(String::from("Must be valid transaction!"));
         }
 
@@ -192,7 +195,7 @@ impl Application for AbciApp {
 
         if let Ok(enc_txn) = String::from_utf8(req.get_tx().to_vec()) {
             if let Ok(txn) = Transaction::decode(enc_txn) {
-                let digest = hash::hash((self.app_hash.clone() + &txn.sql).as_bytes());     // Hash chaining
+                let digest = hash::hash((self.app_hash.clone() + &txn.sql).as_bytes()); // Hash chaining
                 self.app_hash = hex::encode(digest.as_ref()); // Store as hexcode
                 self.txn_queue.push(txn);
                 info!("ABCI:deliver_tx(): Pushing txn. app_hash={}", self.app_hash);
@@ -218,7 +221,12 @@ impl Application for AbciApp {
                 "CREATE TABLE IF NOT EXISTS tendermint_blocks (block_height int PRIMARY KEY, app_hash varchar(20));".to_string()));
         self.txn_queue.push(Transaction::new(
             "abci".to_string(),
-            "INSERT INTO tendermint_blocks VALUES (".to_string() + &self.block_height.to_string() + ",\"" + &self.app_hash + "\");"));
+            "INSERT INTO tendermint_blocks VALUES (".to_string()
+                + &self.block_height.to_string()
+                + ",\""
+                + &self.app_hash
+                + "\");",
+        ));
 
         ResponseEndBlock::new()
     }
@@ -232,7 +240,7 @@ impl Application for AbciApp {
 
         // Generate SQL transaction
         let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
-    
+
         for txn in &self.txn_queue {
             info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
             tx.prep_exec(&txn.sql, ()).unwrap();
@@ -271,10 +279,11 @@ impl PacketHandler for ProxyHandler {
 
             //dynamic route only write requests
             let lower_sql = sql.to_lowercase();
-            if lower_sql.contains("create") || 
-                    lower_sql.contains("insert") || 
-                    lower_sql.contains("update") || 
-                    lower_sql.contains("delete") {
+            if lower_sql.contains("create")
+                || lower_sql.contains("insert")
+                || lower_sql.contains("update")
+                || lower_sql.contains("delete")
+            {
                 let mut url: String = String::from("http://");
                 url.push_str(&self.tendermint_addr);
                 url.push_str("/broadcast_tx_commit?tx=\"");
@@ -308,10 +317,7 @@ impl PacketHandler for ProxyHandler {
 async fn main() {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let node_id: String = thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(16)
-        .collect();
+    let node_id: String = thread_rng().sample_iter(&Alphanumeric).take(16).collect();
 
     info!("Tendermint MariaDB proxy (node_id={}) ... ", node_id);
 
@@ -319,23 +325,32 @@ async fn main() {
     // determine address for the proxy to bind to
     let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());
     // determine address of the database we are proxying for
-    let db_uri_str = args.next().unwrap_or_else(|| "mysql://root:devpassword@mariadb:3306/testdb".to_string());
+    let db_uri_str = args
+        .next()
+        .unwrap_or_else(|| "mysql://root:devpassword@mariadb:3306/testdb".to_string());
     let db_uri = db_uri_str.parse::<Uri>().unwrap();
-    let db_addr = db_uri.host().unwrap().to_string() + ":" + &db_uri.port_u16().unwrap().to_string();
+    let db_addr =
+        db_uri.host().unwrap().to_string() + ":" + &db_uri.port_u16().unwrap().to_string();
     // determint address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
     let tendermint_addr = args.next().unwrap_or("tendermint:26657".to_string());
 
     // Start proxy server
     // let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
-    let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr };
+    let handler = ProxyHandler {
+        node_id: node_id.clone(),
+        tendermint_addr: tendermint_addr,
+    };
     let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
     tokio::spawn(async move {
         info!("Proxy listening on: {}", bind_addr);
         server.run(handler).await;
     });
-    
+
     // Start ABCI application
     info!("ABCI application listening on: {}", abci_addr);
-    abci::run(abci_addr.parse().unwrap(), AbciApp::new(node_id.clone(), Pool::new(db_uri_str).unwrap()));
+    abci::run(
+        abci_addr.parse().unwrap(),
+        AbciApp::new(node_id.clone(), Pool::new(db_uri_str).unwrap()),
+    );
 }

@@ -1,7 +1,7 @@
-use futures::lock::{Mutex};
+use futures::lock::Mutex;
 use std::{
     io::{Error, ErrorKind},
-    sync::{Arc},
+    sync::Arc,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
 

@@ -1,10 +1,6 @@
-use std::sync::{Arc};
+use std::sync::Arc;
 
-use futures::{
-    lock::{Mutex},
-    stream::{StreamExt},
-    try_join,
-};
+use futures::{lock::Mutex, stream::StreamExt, try_join};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{
