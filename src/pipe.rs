@@ -1,4 +1,7 @@
-use futures::lock::Mutex;
+use futures::{
+    future::Future,
+    lock::Mutex,
+};
 use std::{
     io::{Error, ErrorKind},
     sync::Arc,
@@ -77,9 +80,9 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 {
                     // Scope for self.packet_handler Mutex
                     let mut h = self.packet_handler.lock().await;
-                    let transformed_packet = match self.direction {
-                        Direction::Forward => h.handle_request(&packet),
-                        Direction::Backward => h.handle_response(&packet),
+                    let transformed_packet: Packet = match self.direction {
+                        Direction::Forward => h.handle_request(&packet).await,
+                        Direction::Backward => h.handle_response(&packet).await,
                     };
                     write_buf.extend_from_slice(&transformed_packet.bytes);
                 }
