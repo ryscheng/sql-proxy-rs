@@ -1,7 +1,4 @@
-use futures::{
-    future::Future,
-    lock::Mutex,
-};
+use futures::lock::Mutex;
 use std::{
     io::{Error, ErrorKind},
     sync::Arc,

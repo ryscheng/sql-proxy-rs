@@ -7,6 +7,7 @@ use abci::*;
 use env_logger;
 use hex;
 use http::uri::Uri;
+use hyper::Client;
 use mysql::{from_row, from_value, Pool, Value};
 use mariadb_proxy::{
     packet::{Packet, PacketType},
@@ -234,15 +235,15 @@ impl Application for AbciApp {
         resp.set_data(self.app_hash.clone().into_bytes()); // Return the app_hash to Tendermint to include in next block
 
         // Generate SQL transaction
-        let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
+        //let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
 
-        for txn in &self.txn_queue {
-            info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
-            tx.prep_exec(&txn.sql, ()).unwrap();
-        }
+        //for txn in &self.txn_queue {
+        //    info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
+        //    tx.prep_exec(&txn.sql, ()).unwrap();
+        //}
 
         // Update state
-        tx.commit().unwrap();
+        //tx.commit().unwrap();
 
         // TODO: route responses back to client socket
         //if self.node_id == txn.node_id {
@@ -261,8 +262,9 @@ struct ProxyHandler {
 }
 
 // Just forward the packet
+#[async_trait::async_trait]
 impl PacketHandler for ProxyHandler {
-    fn handle_request(&mut self, p: &Packet) -> Packet {
+    async fn handle_request(&mut self, p: &Packet) -> Packet {
         // Print out the packet
         //debug!("[{}]", String::from_utf8_lossy(&p.bytes));
 
@@ -285,6 +287,10 @@ impl PacketHandler for ProxyHandler {
                 url.push_str(txn.encode().as_str());
                 url.push_str("\"");
                 info!("Pushing to Tendermint: {}", url);
+                let url = "http://httpbin.org/ip";
+                let client = Client::new();
+                let resp = client.get(url.parse().unwrap()).await.unwrap();
+                println!("Response: {}", resp.status());
                 // match self.http_client.get(&url).send() {
                 //     Ok(response) => {
                 //       info!("Response: {}", response.status());
@@ -303,7 +309,7 @@ impl PacketHandler for ProxyHandler {
         p.clone()
     }
 
-    fn handle_response(&mut self, p: &Packet) -> Packet {
+    async fn handle_response(&mut self, p: &Packet) -> Packet {
         p.clone()
     }
 }

@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate log;
 
-use futures::future::Future;
 use std::env;
 
 use mariadb_proxy::{packet::Packet, packet_handler::PacketHandler};
@@ -12,15 +11,11 @@ struct PassthroughHandler {}
 #[async_trait::async_trait]
 impl PacketHandler for PassthroughHandler {
     async fn handle_request(&mut self, p: &Packet) -> Packet {
-        Packet { 
-            bytes: p.bytes.clone(),
-        }
+        p.clone()
     }
 
     async fn handle_response(&mut self, p: &Packet) -> Packet {
-        Packet {
-            bytes: p.bytes.clone(),
-        }
+        p.clone()
     }
 }
 

@@ -1,5 +1,3 @@
-use futures::future::Future;
-
 use crate::packet::Packet;
 
 #[derive(Debug)]
