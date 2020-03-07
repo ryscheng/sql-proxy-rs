@@ -41,7 +41,9 @@ impl Server {
                         let (client_reader, client_writer) = client_socket.split();
                         let mut server_socket = TcpStream::connect(db_addr.clone())
                             .await
-                            .expect(&format!("Connecting to SQL database ({}) failed", db_addr));
+                            .unwrap_or_else(|_| {
+                                panic!("Connecting to SQL database ({}) failed", db_addr)
+                            });
                         let (server_reader, server_writer) = server_socket.split();
                         let mut forward_pipe = Pipe::new(
                             client_addr.clone(),
