@@ -7,7 +7,7 @@ use abci::*;
 use env_logger;
 use hex;
 use http::uri::Uri;
-use hyper::Client;
+use hyper;
 use mariadb_proxy::{
     packet::{Packet, PacketType},
     packet_handler::PacketHandler,
@@ -78,7 +78,7 @@ impl AbciApp {
             sql_pool: sql_pool,
             txn_queue: Vec::new(),
             block_height: 0,
-            app_hash: "".to_string(),
+            app_hash: "start".to_string(),
         }
     }
 }
@@ -235,15 +235,15 @@ impl Application for AbciApp {
         resp.set_data(self.app_hash.clone().into_bytes()); // Return the app_hash to Tendermint to include in next block
 
         // Generate SQL transaction
-        //let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
+        let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
 
-        //for txn in &self.txn_queue {
-        //    info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
-        //    tx.prep_exec(&txn.sql, ()).unwrap();
-        //}
+        for txn in &self.txn_queue {
+            info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
+            tx.prep_exec(&txn.sql, ()).unwrap();
+        }
 
         // Update state
-        //tx.commit().unwrap();
+        tx.commit().unwrap();
 
         // TODO: route responses back to client socket
         //if self.node_id == txn.node_id {
@@ -258,7 +258,17 @@ impl Application for AbciApp {
 struct ProxyHandler {
     node_id: String,
     tendermint_addr: String,
-    // http_client: Client,
+    http_client: hyper::Client<hyper::client::HttpConnector, hyper::Body>,
+}
+
+impl ProxyHandler {
+    fn new(node_id: String, tendermint_addr: String) -> ProxyHandler {
+        ProxyHandler {
+            node_id: node_id,
+            tendermint_addr: tendermint_addr,
+            http_client: hyper::Client::new(),
+        }
+    }
 }
 
 // Just forward the packet
@@ -281,25 +291,19 @@ impl PacketHandler for ProxyHandler {
                 || lower_sql.contains("update")
                 || lower_sql.contains("delete")
             {
-                let mut url: String = String::from("http://");
-                url.push_str(&self.tendermint_addr);
-                url.push_str("/broadcast_tx_commit?tx=\"");
-                url.push_str(txn.encode().as_str());
-                url.push_str("\"");
-                info!("Pushing to Tendermint: {}", url);
-                let url = "http://httpbin.org/ip";
-                let client = Client::new();
-                let resp = client.get(url.parse().unwrap()).await.unwrap();
-                println!("Response: {}", resp.status());
-                // match self.http_client.get(&url).send() {
-                //     Ok(response) => {
-                //       info!("Response: {}", response.status());
-                //       info!("Headers: {:#?}\n", response.headers());
-                //     },
-                //     Err(e) => {
-                //       warn!("Unable to forward to Tendermint: {}", e);
-                //     },
-                // };
+                let mut uri_str: String = String::from("http://");
+                uri_str.push_str(&self.tendermint_addr);
+                uri_str.push_str("/broadcast_tx_commit?tx=");
+                //uri_str.push_str("\"");
+                uri_str.push_str(txn.encode().as_str());
+                //uri_str.push_str("\"");
+                info!("Pushing to Tendermint: {}", uri_str);
+                //let uri_str = "http://httpbin.org/ip";
+                let uri = uri_str.parse().expect(format!("Unable to parse URL {}", uri_str).as_str());
+                let response = self.http_client.get(uri).await.expect("HTTP GET request failed");
+                info!("Response: {}", response.status());
+                info!("Headers: {:#?}\n", response.headers());
+                info!("Body: {:#?}\n", response.body());
                 return Packet { bytes: Vec::new() }; // Dropping packets for now
             }
         }
@@ -338,10 +342,7 @@ async fn main() {
 
     // Start proxy server
     // let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
-    let handler = ProxyHandler {
-        node_id: node_id.clone(),
-        tendermint_addr: tendermint_addr,
-    };
+    let handler = ProxyHandler::new(node_id.clone(), tendermint_addr);
     let mut server = mariadb_proxy::server::Server::new(bind_addr.clone(), db_addr.clone()).await;
     tokio::spawn(async move {
         info!("Proxy listening on: {}", bind_addr);
