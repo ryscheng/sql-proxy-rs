@@ -12,4 +12,3 @@ pub trait PacketHandler {
     async fn handle_request(&mut self, p: &Packet) -> Packet;
     async fn handle_response(&mut self, p: &Packet) -> Packet;
 }
- 

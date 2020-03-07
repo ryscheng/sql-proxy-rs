@@ -8,11 +8,11 @@ use env_logger;
 use hex;
 use http::uri::Uri;
 use hyper::Client;
-use mysql::{from_row, from_value, Pool, Value};
 use mariadb_proxy::{
     packet::{Packet, PacketType},
     packet_handler::PacketHandler,
 };
+use mysql::{from_row, from_value, Pool, Value};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sodiumoxide::crypto::hash;
 use sqlparser::{dialect::GenericDialect, parser::Parser};
