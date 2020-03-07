@@ -22,7 +22,6 @@ hyper = "0.13"
 mysql = "17.0"
 mysql_async = "0.21"
 rand = "0.7"
-reqwest = { version = "0.10", features = ["blocking", "json"] }
 sodiumoxide = "0.2"
 sqlparser = "0.5"
 urlencoding = "1.0"

@@ -8,13 +8,11 @@ use env_logger;
 use hex;
 use http::uri::Uri;
 use mysql::{from_row, from_value, Pool, Value};
-// use mysql_async;
 use mariadb_proxy::{
     packet::{Packet, PacketType},
     packet_handler::PacketHandler,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-// use reqwest::blocking::{Client};
 use sodiumoxide::crypto::hash;
 use sqlparser::{dialect::GenericDialect, parser::Parser};
 use std::io::{Error, ErrorKind};
@@ -182,9 +180,6 @@ impl Application for AbciApp {
         debug!("ABCI:begin_block()");
         self.block_height += 1;
         self.txn_queue.clear();
-
-        // PostgresSQL:
-        //self.txn_queue.push(Transaction::new("abci".to_string(), "BEGIN;"));
         ResponseBeginBlock::new()
     }
 
