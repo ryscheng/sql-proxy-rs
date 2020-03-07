@@ -9,7 +9,9 @@ pub enum Direction {
 }
 
 /// Packet handlers need to implement this trait
+#[async_trait::async_trait]
 pub trait PacketHandler {
-    fn handle_request(&mut self, p: &Packet) -> Box<dyn Future<Output = Packet>+Unpin+Send>;
-    fn handle_response(&mut self, p: &Packet) -> Box<dyn Future<Output = Packet>+Unpin+Send>;
+    async fn handle_request(&mut self, p: &Packet) -> Packet;
+    async fn handle_response(&mut self, p: &Packet) -> Packet;
 }
+ 

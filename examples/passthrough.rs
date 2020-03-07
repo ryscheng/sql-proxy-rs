@@ -9,21 +9,18 @@ use mariadb_proxy::{packet::Packet, packet_handler::PacketHandler};
 struct PassthroughHandler {}
 
 // Just forward the packet
+#[async_trait::async_trait]
 impl PacketHandler for PassthroughHandler {
-    fn handle_request(&mut self, p: &Packet) -> Box<dyn Future<Output = Packet>+Unpin+Send> {
-        Box::new(Box::pin(async {
-            Packet {
-                bytes: p.bytes.clone(),
-            }
-        }))
+    async fn handle_request(&mut self, p: &Packet) -> Packet {
+        Packet { 
+            bytes: p.bytes.clone(),
+        }
     }
 
-    fn handle_response(&mut self, p: &Packet) -> Box<dyn Future<Output = Packet>+Unpin+Send> {
-        Box::new(Box::pin(async {
-            Packet {
-                bytes: p.bytes.clone(),
-            }
-        }))
+    async fn handle_response(&mut self, p: &Packet) -> Packet {
+        Packet {
+            bytes: p.bytes.clone(),
+        }
     }
 }
 
