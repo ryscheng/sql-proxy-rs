@@ -303,7 +303,8 @@ impl PacketHandler for ProxyHandler {
                 let response = self.http_client.get(uri).await.expect("HTTP GET request failed");
                 info!("Response: {}", response.status());
                 info!("Headers: {:#?}\n", response.headers());
-                info!("Body: {:#?}\n", response.body());
+                let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+                info!("Body: {:#?}\n", String::from_utf8(body_bytes.to_vec()).expect("response was not valid utf-8"));
                 return Packet { bytes: Vec::new() }; // Dropping packets for now
             }
         }
