@@ -294,17 +294,26 @@ impl PacketHandler for ProxyHandler {
                 let mut uri_str: String = String::from("http://");
                 uri_str.push_str(&self.tendermint_addr);
                 uri_str.push_str("/broadcast_tx_commit?tx=");
-                //uri_str.push_str("\"");
+                uri_str.push_str("%22");
                 uri_str.push_str(txn.encode().as_str());
-                //uri_str.push_str("\"");
+                uri_str.push_str("%22"); //uri_str.push_str("\"");
                 info!("Pushing to Tendermint: {}", uri_str);
                 //let uri_str = "http://httpbin.org/ip";
-                let uri = uri_str.parse().expect(format!("Unable to parse URL {}", uri_str).as_str());
-                let response = self.http_client.get(uri).await.expect("HTTP GET request failed");
+                let uri = uri_str
+                    .parse()
+                    .expect(format!("Unable to parse URL {}", uri_str).as_str());
+                let response = self
+                    .http_client
+                    .get(uri)
+                    .await
+                    .expect("HTTP GET request failed");
                 info!("Response: {}", response.status());
                 info!("Headers: {:#?}\n", response.headers());
                 let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-                info!("Body: {:#?}\n", String::from_utf8(body_bytes.to_vec()).expect("response was not valid utf-8"));
+                info!(
+                    "Body: {:#?}\n",
+                    String::from_utf8(body_bytes.to_vec()).expect("response was not valid utf-8")
+                );
                 return Packet { bytes: Vec::new() }; // Dropping packets for now
             }
         }
