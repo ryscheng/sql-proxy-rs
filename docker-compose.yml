@@ -1,0 +1,35 @@
+version: "3"
+
+services:
+  mariadb-server:
+    image: mariadb
+    container_name: mariadb-server
+    restart: always
+    environment:
+      - MYSQL_HOST=localhost
+      - MYSQL_PORT=3306
+      - MYSQL_ROOT_PASSWORD=devpassword
+    ports:
+      - "3306:3306"  # for interop with locahost
+
+  mariadb-proxy:
+    image: rust
+    container_name: mariadb-proxy
+    command: /bin/bash -c "while true; do sleep 200; echo 'TERMINAL is up'; done"
+    volumes:
+      - "./:/code"
+    working_dir: /code
+    ports:
+      - "26658:26658"
+    links:
+      - mariadb-server
+
+  tendermint:
+    image: tendermint/tendermint
+    container_name: tendermint-node
+    command: "node --proxy_app=tcp://mariadb-proxy:26658"
+    volumes:
+      - "/tmp/tendermint:/tendermint"
+    links:
+      - mariadb-server
+      - mariadb-proxy
