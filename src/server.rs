@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use futures::{stream::StreamExt, try_join};
+use futures::{lock::Mutex, stream::StreamExt, try_join};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{
@@ -39,9 +39,11 @@ impl Server {
                     let handler_ref = packet_handler.clone();
                     tokio::spawn(async move {
                         let (client_reader, client_writer) = client_socket.split();
-                        let mut server_socket = TcpStream::connect(db_addr)
+                        let mut server_socket = TcpStream::connect(db_addr.clone())
                             .await
-                            .expect("Connecting to SQL database failed");
+                            .unwrap_or_else(|_| {
+                                panic!("Connecting to SQL database ({}) failed", db_addr)
+                            });
                         let (server_reader, server_writer) = server_socket.split();
                         let mut forward_pipe = Pipe::new(
                             client_addr.clone(),

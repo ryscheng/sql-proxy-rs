@@ -13,8 +13,9 @@ struct CounterHandler {
 }
 
 // Just forward the packet
+#[async_trait::async_trait]
 impl PacketHandler for CounterHandler {
-    fn handle_request(&mut self, p: &Packet) -> Packet {
+    async fn handle_request(&mut self, p: &Packet) -> Packet {
         // Print out the packet
         //debug!("[{}]", String::from_utf8_lossy(&p.bytes));
 
@@ -33,15 +34,11 @@ impl PacketHandler for CounterHandler {
             _ => debug!("{:?} packet", p.packet_type()),
         }
 
-        Packet {
-            bytes: p.bytes.clone(),
-        }
+        p.clone()
     }
 
-    fn handle_response(&mut self, p: &Packet) -> Packet {
-        Packet {
-            bytes: p.bytes.clone(),
-        }
+    async fn handle_response(&mut self, p: &Packet) -> Packet {
+        p.clone()
     }
 }
 
