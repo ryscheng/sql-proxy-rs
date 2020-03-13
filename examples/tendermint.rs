@@ -214,7 +214,7 @@ impl Application for AbciApp {
         // Add mandatory transactions to queue
         self.txn_queue.push(Transaction::new(
                 "abci".to_string(), 
-                "CREATE TABLE IF NOT EXISTS tendermint_blocks (block_height int PRIMARY KEY, app_hash varchar(20));".to_string()));
+                "CREATE TABLE IF NOT EXISTS tendermint_blocks (block_height int PRIMARY KEY, app_hash text);".to_string()));
         self.txn_queue.push(Transaction::new(
             "abci".to_string(),
             "INSERT INTO tendermint_blocks VALUES (".to_string()
@@ -342,13 +342,13 @@ async fn main() {
     // determine address of the database we are proxying for
     let db_uri_str = args
         .next()
-        .unwrap_or_else(|| "mysql://root:devpassword@mariadb:3306/testdb".to_string());
+        .unwrap_or_else(|| "mysql://root:devpassword@mariadb-server:3306/testdb".to_string());
     let db_uri = db_uri_str.parse::<Uri>().unwrap();
     let db_addr =
         db_uri.host().unwrap().to_string() + ":" + &db_uri.port_u16().unwrap().to_string();
     // determint address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
-    let tendermint_addr = args.next().unwrap_or("tendermint:26657".to_string());
+    let tendermint_addr = args.next().unwrap_or("tendermint-node:26657".to_string());
 
     // Start proxy server
     // let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
