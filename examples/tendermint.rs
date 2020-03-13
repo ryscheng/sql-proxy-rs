@@ -12,7 +12,8 @@ use mariadb_proxy::{
     packet::{Packet, PacketType},
     packet_handler::PacketHandler,
 };
-use mysql::{from_row, from_value, Pool, Value};
+use mysql::{from_row, from_value, Pool, Value, TxOpts};
+use mysql::prelude::*;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sodiumoxide::crypto::hash;
 use sqlparser::{dialect::GenericDialect, parser::Parser};
@@ -91,7 +92,8 @@ impl Application for AbciApp {
         debug!("ABCI:info()");
         let mut response = ResponseInfo::new();
         let sql_query = "SELECT MAX(block_height) AS max_height, app_hash FROM tendermint_blocks;";
-        match self.sql_pool.prep_exec(sql_query, ()) {
+        let mut conn = self.sql_pool.get_conn().unwrap();
+        match conn.exec_iter(sql_query, ()) {
             Ok(rows) => {
                 for row in rows {
                     let (height, app_hash) = from_row(row.unwrap());
@@ -234,12 +236,14 @@ impl Application for AbciApp {
         let mut resp = ResponseCommit::new();
         resp.set_data(self.app_hash.clone().into_bytes()); // Return the app_hash to Tendermint to include in next block
 
+        let mut conn = self.sql_pool.get_conn().unwrap();
+
         // Generate SQL transaction
-        let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
+        let mut tx = conn.start_transaction(TxOpts::default()).unwrap();
 
         for txn in &self.txn_queue {
             info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
-            tx.prep_exec(&txn.sql, ()).unwrap();
+            tx.query_drop(&txn.sql).unwrap();
         }
 
         // Update state
