@@ -352,15 +352,11 @@ async fn main() {
 
     // Start proxy server
     // let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
-    let handler = ProxyHandler::new(
-        node_id.clone(),
-        DatabaseType::PostgresSQL,
-        tendermint_addr
-    );
+    let handler = ProxyHandler::new(node_id.clone(), DatabaseType::PostgresSQL, tendermint_addr);
     let mut server = mariadb_proxy::server::Server::new(
         bind_addr.clone(),
         DatabaseType::PostgresSQL,
-        db_addr.clone()
+        db_addr.clone(),
     )
     .await;
 

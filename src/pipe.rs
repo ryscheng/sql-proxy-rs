@@ -38,7 +38,6 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         }
     }
 
-
     pub async fn run(&mut self) -> Result<()> {
         trace!("[{}]: Running {:?} pipe loop...", self.name, self.direction);
         //let source = Arc::get_mut(&mut self.source).unwrap();
@@ -100,7 +99,6 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             );
         } // end loop
     } // end fn run
-
 } // end impl
 
 fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet> {
@@ -129,4 +127,3 @@ fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet>
         }
     }
 }
-

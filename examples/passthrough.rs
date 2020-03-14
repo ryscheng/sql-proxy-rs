@@ -1,8 +1,10 @@
 #[macro_use]
 extern crate log;
 
-use mariadb_proxy::packet::{DatabaseType, Packet};
-use mariadb_proxy::packet_handler::PacketHandler;
+use mariadb_proxy::{
+    packet::{DatabaseType, Packet},
+    packet_handler::PacketHandler,
+};
 use std::env;
 
 struct PassthroughHandler {}
@@ -28,7 +30,9 @@ async fn main() {
     // determine address for the proxy to bind to
     let bind_addr = env::args().nth(1).unwrap_or("0.0.0.0:3306".to_string());
     // determine address of the MariaDB instance we are proxying for
-    let db_addr = env::args().nth(2).unwrap_or("postgres-server:3306".to_string());
+    let db_addr = env::args()
+        .nth(2)
+        .unwrap_or("postgres-server:3306".to_string());
 
     let mut server = mariadb_proxy::server::Server::new(
         bind_addr.clone(),
