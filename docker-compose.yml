@@ -10,7 +10,24 @@ services:
       - MYSQL_PORT=3306
       - MYSQL_ROOT_PASSWORD=devpassword
     ports:
-      - "3306:3306"  # for interop with locahost
+      - 3306:3306  # for interop with locahost
+
+  postgres-server:
+    image: postgres
+    container_name: postgres-server
+    restart: always
+    volumes:
+      - "/tmp/postgres:/var/lib/postgresql/data"
+    environment:
+      - POSTGRES_PASSWORD=devpassword
+    ports:
+      - 5432:5432  # for interop with locahost
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
 
   mariadb-proxy:
     image: rust
@@ -23,6 +40,7 @@ services:
       - "26658:26658"
     links:
       - mariadb-server
+      - postgres-server
 
   tendermint:
     image: tendermint/tendermint:v0.32.9
@@ -32,4 +50,5 @@ services:
       - "/tmp/tendermint:/tendermint"
     links:
       - mariadb-server
+      - postgres-server
       - mariadb-proxy

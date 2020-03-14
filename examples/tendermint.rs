@@ -5,6 +5,7 @@ extern crate log;
 
 use abci::*;
 use env_logger;
+use futures::executor::block_on;
 use hex;
 use http::uri::Uri;
 use hyper;
@@ -13,6 +14,7 @@ use mariadb_proxy::{
     packet_handler::PacketHandler,
 };
 use mysql::{from_row, from_value, Pool, Value};
+use tokio_postgres::{Client, NoTls, connect};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sodiumoxide::crypto::hash;
 use sqlparser::{dialect::GenericDialect, parser::Parser};
@@ -69,16 +71,20 @@ struct AbciApp {
     txn_queue: Vec<Transaction>,
     block_height: i64,
     app_hash: String,
+    pg_client: Client,
+    db_type: DatabaseType,
 }
 
 impl AbciApp {
-    fn new(node_id: String, sql_pool: Pool) -> AbciApp {
+    fn new(node_id: String, sql_pool: Pool, pg_client: Client, db_type: DatabaseType) -> AbciApp {
         AbciApp {
             node_id: node_id,
             sql_pool: sql_pool,
             txn_queue: Vec::new(),
             block_height: 0,
             app_hash: "start".to_string(),
+            pg_client: pg_client,
+            db_type: db_type,
         }
     }
 }
@@ -91,26 +97,42 @@ impl Application for AbciApp {
         debug!("ABCI:info()");
         let mut response = ResponseInfo::new();
         let sql_query = "SELECT MAX(block_height) AS max_height, app_hash FROM tendermint_blocks;";
-        match self.sql_pool.prep_exec(sql_query, ()) {
-            Ok(rows) => {
-                for row in rows {
-                    let (height, app_hash) = from_row(row.unwrap());
 
-                    // Check for null values when tendermint_blocks table is empty
-                    self.block_height = match height {
-                        Value::NULL => 0,
-                        _ => from_value::<i64>(height),
-                    };
-                    self.app_hash = match app_hash {
-                        Value::NULL => "".to_string(),
-                        _ => from_value::<String>(app_hash),
-                    };
+        match self.db_type {
+            DatabaseType::MariaDB => {
+                match self.sql_pool.prep_exec(sql_query, ()) {
+                    Ok(rows) => {
+                        for row in rows {
+                            let (height, app_hash) = from_row(row.unwrap());
 
-                    response.set_last_block_height(self.block_height);
-                    response.set_last_block_app_hash(self.app_hash.clone().into_bytes());
+                            // Check for null values when tendermint_blocks table is empty
+                            self.block_height = match height {
+                                Value::NULL => 0,
+                                _ => from_value::<i64>(height),
+                            };
+                            self.app_hash = match app_hash {
+                                Value::NULL => "".to_string(),
+                                _ => from_value::<String>(app_hash),
+                            };
+
+                            response.set_last_block_height(self.block_height);
+                            response.set_last_block_app_hash(self.app_hash.clone().into_bytes());
+                        }
+                    }
+                    Err(e) => warn!("SQL query failed to execute: {}", e),
                 }
             }
-            Err(e) => warn!("SQL query failed to execute: {}", e),
+            DatabaseType::PostgresSQL => {
+                block_on(async {
+                    let rows = self.pg_client
+                        .query(sql_query, &[])
+                        .await.unwrap();
+                    self.block_height = rows[0].get(0);
+                    self.app_hash = rows[0].get(1);
+                    response.set_last_block_height(self.block_height);
+                    response.set_last_block_app_hash(self.app_hash.clone().into_bytes());
+                })
+            }
         }
 
         response
@@ -234,16 +256,33 @@ impl Application for AbciApp {
         let mut resp = ResponseCommit::new();
         resp.set_data(self.app_hash.clone().into_bytes()); // Return the app_hash to Tendermint to include in next block
 
-        // Generate SQL transaction
-        let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
+        match self.db_type {
+            DatabaseType::MariaDB => {
+                // Generate SQL transaction
+                let mut tx = self.sql_pool.start_transaction(false, None, None).unwrap();
 
-        for txn in &self.txn_queue {
-            info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
-            tx.prep_exec(&txn.sql, ()).unwrap();
+                for txn in &self.txn_queue {
+                    info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
+                    tx.prep_exec(&txn.sql, ()).unwrap();
+                }
+
+                // Update state
+                tx.commit().unwrap();
+            }
+            DatabaseType::PostgresSQL => {
+                block_on(async {
+                    let tx = self.pg_client.transaction().await.unwrap();
+
+                    // Generate SQL transaction
+                    for txn in &self.txn_queue {
+                        info!("ABCI:commit(): Forwarding SQL: {}", &txn.sql);
+                        tx.prepare(&txn.sql).await.unwrap();
+                    }
+
+                    tx.commit().await.unwrap();
+                })
+            }
         }
-
-        // Update state
-        tx.commit().unwrap();
 
         // TODO: route responses back to client socket
         //if self.node_id == txn.node_id {
@@ -338,14 +377,32 @@ async fn main() {
 
     let mut args = std::env::args().skip(1);
     // determine address for the proxy to bind to
-    let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());
+
+    // mariadb
+    // let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());
+
+    // postgres
+    let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:5432".to_string());
     // determine address of the database we are proxying for
-    let db_uri_str = args
+    
+    // mariadb
+    let mariadb_db_uri_str = args
         .next()
         .unwrap_or_else(|| "mysql://root:devpassword@mariadb-server:3306/testdb".to_string());
-    let db_uri = db_uri_str.parse::<Uri>().unwrap();
-    let db_addr =
-        db_uri.host().unwrap().to_string() + ":" + &db_uri.port_u16().unwrap().to_string();
+
+    let mariadb_db_uri = mariadb_db_uri_str.parse::<Uri>().unwrap();
+    let mariadb_db_addr =
+        mariadb_db_uri.host().unwrap().to_string() + ":" + &mariadb_db_uri.port_u16().unwrap().to_string();
+
+    // postgres
+    let postgres_db_uri_str = args
+        .next()
+        .unwrap_or_else(|| "postgresql://postgres:devpassword@postgres-server:5432/testdb".to_string());
+
+    let postgres_db_uri = postgres_db_uri_str.parse::<Uri>().unwrap();
+    let postgres_db_addr =
+        postgres_db_uri.host().unwrap().to_string() + ":" + &postgres_db_uri.port_u16().unwrap().to_string();
+
     // determint address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
     let tendermint_addr = args.next().unwrap_or("tendermint-node:26657".to_string());
@@ -356,19 +413,34 @@ async fn main() {
     let mut server = mariadb_proxy::server::Server::new(
         bind_addr.clone(),
         DatabaseType::PostgresSQL,
-        db_addr.clone(),
+        postgres_db_addr.clone(),
     )
     .await;
+
 
     tokio::spawn(async move {
         info!("Proxy listening on: {}", bind_addr);
         server.run(handler).await;
     });
 
+    let (client, connection) =
+        connect("host=postgres-server user=postgres password=devpassword", NoTls).await.unwrap();
+    
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
     // Start ABCI application
     info!("ABCI application listening on: {}", abci_addr);
     abci::run(
         abci_addr.parse().unwrap(),
-        AbciApp::new(node_id.clone(), Pool::new(db_uri_str).unwrap()),
+        AbciApp::new(
+            node_id.clone(),
+            Pool::new(mariadb_db_uri_str).unwrap(),
+            client,
+            DatabaseType::PostgresSQL
+        )
     );
 }
