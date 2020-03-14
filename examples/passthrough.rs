@@ -1,10 +1,5 @@
-extern crate mariadb_proxy;
-
-extern crate env_logger;
-extern crate futures;
 #[macro_use]
 extern crate log;
-extern crate tokio;
 
 use mariadb_proxy::packet::{DatabaseType, Packet};
 use mariadb_proxy::packet_handler::PacketHandler;
@@ -13,12 +8,13 @@ use std::env;
 struct PassthroughHandler {}
 
 // Just forward the packet
+#[async_trait::async_trait]
 impl PacketHandler for PassthroughHandler {
-    fn handle_request(&mut self, p: &Packet) -> Packet {
+    async fn handle_request(&mut self, p: &Packet) -> Packet {
         p.clone()
     }
 
-    fn handle_response(&mut self, p: &Packet) -> Packet {
+    async fn handle_response(&mut self, p: &Packet) -> Packet {
         p.clone()
     }
 }
@@ -32,7 +28,7 @@ async fn main() {
     // determine address for the proxy to bind to
     let bind_addr = env::args().nth(1).unwrap_or("0.0.0.0:3306".to_string());
     // determine address of the MariaDB instance we are proxying for
-    let db_addr = env::args().nth(2).unwrap_or("postgres:3306".to_string());
+    let db_addr = env::args().nth(2).unwrap_or("postgres-server:3306".to_string());
 
     let mut server = mariadb_proxy::server::Server::new(
         bind_addr.clone(),
@@ -40,6 +36,7 @@ async fn main() {
         db_addr.clone(),
     )
     .await;
+
     info!("Proxy listening on: {}", bind_addr);
     server.run(PassthroughHandler {}).await;
 }

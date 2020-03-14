@@ -1,10 +1,5 @@
-extern crate abci;
-extern crate byteorder;
-extern crate env_logger;
 #[macro_use]
 extern crate log;
-extern crate mysql_async;
-extern crate tokio;
 
 use mysql_async::prelude::*;
 

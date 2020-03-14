@@ -1,9 +1,10 @@
-use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use std::io::{Error, ErrorKind};
+
+use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 
 /// A packet is just a wrapper for a Vec<u8>
 /// For reference, see https://dev.mysql.com/doc/internals/en/mysql-packet.html
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Packet {
     db_type: DatabaseType,
     pub bytes: Vec<u8>,
@@ -25,7 +26,7 @@ impl Packet {
         let mut payload: Vec<u8> = Vec::with_capacity(9 + msg.len());
         payload.push(0xff); // packet type
         payload.write_u16::<LittleEndian>(code).unwrap(); // error code
-        payload.extend_from_slice("#".as_bytes()); // sql_state_marker
+        payload.extend_from_slice(b"#"); // sql_state_marker
         payload.extend_from_slice(&state); // SQL STATE
         payload.extend_from_slice(msg.as_bytes());
 

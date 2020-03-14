@@ -1,8 +1,14 @@
-use crate::packet::{DatabaseType, Packet};
-use crate::packet_handler::{Direction, PacketHandler};
-use std::io::{Error, ErrorKind};
-use std::sync::{Arc, Mutex};
+use futures::lock::Mutex;
+use std::{
+    io::{Error, ErrorKind},
+    sync::Arc,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
+
+use crate::{
+    packet::{DatabaseType, Packet},
+    packet_handler::{Direction, PacketHandler},
+};
 
 pub struct Pipe<T: AsyncReadExt, U: AsyncWriteExt> {
     name: String,
@@ -23,14 +29,15 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         writer: U,
     ) -> Pipe<T, U> {
         Pipe {
-            name: name,
-            db_type: db_type,
-            packet_handler: packet_handler,
-            direction: direction,
+            name,
+            db_type,
+            packet_handler,
+            direction,
             source: reader,
             sink: writer,
         }
     }
+
 
     pub async fn run(&mut self) -> Result<()> {
         trace!("[{}]: Running {:?} pipe loop...", self.name, self.direction);
@@ -49,7 +56,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 self.direction,
                 n
             );
-            if n <= 0 {
+            if n == 0 {
                 let e = Error::new(
                     ErrorKind::Other,
                     format!(
@@ -70,13 +77,13 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
 
             // Process all packets in packet_buf, put into write_buf
             while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
-                debug!("[{}:{:?}]: Processing packet", self.name, self.direction);
+                trace!("[{}:{:?}]: Processing packet", self.name, self.direction);
                 {
                     // Scope for self.packet_handler Mutex
-                    let mut h = self.packet_handler.lock().unwrap();
-                    let transformed_packet = match self.direction {
-                        Direction::Forward => h.handle_request(&packet),
-                        Direction::Backward => h.handle_response(&packet),
+                    let mut h = self.packet_handler.lock().await;
+                    let transformed_packet: Packet = match self.direction {
+                        Direction::Forward => h.handle_request(&packet).await,
+                        Direction::Backward => h.handle_response(&packet).await,
                     };
                     write_buf.extend_from_slice(&transformed_packet.bytes);
                 }
@@ -92,8 +99,9 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 n
             );
         } // end loop
-    }
-}
+    } // end fn run
+
+} // end impl
 
 fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet> {
     match db_type {
@@ -121,3 +129,4 @@ fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet>
         }
     }
 }
+

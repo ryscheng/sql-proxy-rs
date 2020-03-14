@@ -1,11 +1,13 @@
-use futures::stream::StreamExt;
-use futures::try_join;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use futures::{lock::Mutex, stream::StreamExt, try_join};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::packet::DatabaseType;
-use crate::packet_handler::{Direction, PacketHandler};
-use crate::pipe::Pipe;
+use crate::{
+    packet::DatabaseType,
+    packet_handler::{Direction, PacketHandler},
+    pipe::Pipe,
+};
 
 #[derive(Debug)]
 pub struct Server {
@@ -17,8 +19,8 @@ pub struct Server {
 impl Server {
     pub async fn new(bind_addr: String, db_type: DatabaseType, db_addr: String) -> Server {
         Server {
-            db_type: db_type,
-            db_addr: db_addr,
+            db_type,
+            db_addr,
             listener: TcpListener::bind(bind_addr)
                 .await
                 .expect("Unable to bind to bind_addr"),
@@ -30,7 +32,7 @@ impl Server {
         let packet_handler = Arc::new(Mutex::new(packet_handler));
         let mut incoming = self.listener.incoming();
         while let Some(conn) = incoming.next().await {
-            let _ = match conn {
+            match conn {
                 Ok(mut client_socket) => {
                     let client_addr = match client_socket.peer_addr() {
                         Ok(addr) => addr.to_string(),
@@ -41,9 +43,11 @@ impl Server {
                     let handler_ref = packet_handler.clone();
                     tokio::spawn(async move {
                         let (client_reader, client_writer) = client_socket.split();
-                        let mut server_socket = TcpStream::connect(db_addr)
+                        let mut server_socket = TcpStream::connect(db_addr.clone())
                             .await
-                            .expect("Connecting to SQL database failed");
+                            .unwrap_or_else(|_| {
+                                panic!("Connecting to SQL database ({}) failed", db_addr)
+                            });
                         let (server_reader, server_writer) = server_socket.split();
                         let mut forward_pipe = Pipe::new(
                             client_addr.clone(),
@@ -61,7 +65,7 @@ impl Server {
                             server_reader,
                             client_writer,
                         );
-                        let _ = match try_join!(forward_pipe.run(), backward_pipe.run()) {
+                        match try_join!(forward_pipe.run(), backward_pipe.run()) {
                             Ok(((), ())) => {
                                 trace!("Pipe closed successfully");
                             }
