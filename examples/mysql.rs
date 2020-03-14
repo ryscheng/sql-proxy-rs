@@ -1,7 +1,8 @@
 extern crate abci;
 extern crate byteorder;
 extern crate env_logger;
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 extern crate mysql_async;
 extern crate tokio;
 
@@ -16,11 +17,31 @@ struct Payment {
 
 async fn insert() -> Result<(), mysql_async::error::Error> {
     let payments = vec![
-        Payment { customer_id: 1, amount: 2, account_name: None },
-        Payment { customer_id: 3, amount: 4, account_name: Some("foo".into()) },
-        Payment { customer_id: 5, amount: 6, account_name: None },
-        Payment { customer_id: 7, amount: 8, account_name: None },
-        Payment { customer_id: 9, amount: 10, account_name: Some("bar".into()) },
+        Payment {
+            customer_id: 1,
+            amount: 2,
+            account_name: None,
+        },
+        Payment {
+            customer_id: 3,
+            amount: 4,
+            account_name: Some("foo".into()),
+        },
+        Payment {
+            customer_id: 5,
+            amount: 6,
+            account_name: None,
+        },
+        Payment {
+            customer_id: 7,
+            amount: 8,
+            account_name: None,
+        },
+        Payment {
+            customer_id: 9,
+            amount: 10,
+            account_name: Some("bar".into()),
+        },
     ];
     let payments_clone = payments.clone();
 
@@ -29,13 +50,15 @@ async fn insert() -> Result<(), mysql_async::error::Error> {
     let conn = pool.get_conn().await?;
 
     // Create temporary table
-    let conn = conn.drop_query(
-        r"CREATE TEMPORARY TABLE payment (
+    let conn = conn
+        .drop_query(
+            r"CREATE TEMPORARY TABLE payment (
             customer_id int not null,
             amount int not null,
             account_name text
-        )"
-    ).await?;
+        )",
+        )
+        .await?;
 
     // Save payments
     let params = payments_clone.into_iter().map(|payment| {
@@ -46,21 +69,30 @@ async fn insert() -> Result<(), mysql_async::error::Error> {
         }
     });
 
-    let conn = conn.batch_exec(r"INSERT INTO payment (customer_id, amount, account_name)
-                    VALUES (:customer_id, :amount, :account_name)", params).await?;
+    let conn = conn
+        .batch_exec(
+            r"INSERT INTO payment (customer_id, amount, account_name)
+                    VALUES (:customer_id, :amount, :account_name)",
+            params,
+        )
+        .await?;
 
     // Load payments from database.
-    let result = conn.prep_exec("SELECT customer_id, amount, account_name FROM payment", ()).await?;
+    let result = conn
+        .prep_exec("SELECT customer_id, amount, account_name FROM payment", ())
+        .await?;
 
     // Collect payments
-    let (_ /* conn */, loaded_payments) = result.map_and_drop(|row| {
-        let (customer_id, amount, account_name) = mysql_async::from_row(row);
-        Payment {
-            customer_id: customer_id,
-            amount: amount,
-            account_name: account_name,
-        }
-    }).await?;
+    let (_ /* conn */, loaded_payments) = result
+        .map_and_drop(|row| {
+            let (customer_id, amount, account_name) = mysql_async::from_row(row);
+            Payment {
+                customer_id: customer_id,
+                amount: amount,
+                account_name: account_name,
+            }
+        })
+        .await?;
 
     // The destructor of a connection will return it to the pool,
     // but pool should be disconnected explicitly because it's
@@ -75,8 +107,8 @@ async fn insert() -> Result<(), mysql_async::error::Error> {
 
 #[tokio::main]
 async fn main() {
-  env_logger::init();
+    env_logger::init();
 
-  info!("MySQL driver demo... ");
-  insert().await.unwrap();
+    info!("MySQL driver demo... ");
+    insert().await.unwrap();
 }

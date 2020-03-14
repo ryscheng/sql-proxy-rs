@@ -2,15 +2,16 @@ extern crate abci;
 extern crate byteorder;
 extern crate env_logger;
 extern crate futures;
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 extern crate tokio;
 
-use std::env;
-use std::net::{SocketAddr};
 use abci::*;
 use env_logger::Env;
 use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::{Parser};
+use sqlparser::parser::Parser;
+use std::env;
+use std::net::SocketAddr;
 
 // MariaDB Application.  Its only state is a SQL string as bytes.
 struct MariaDBApp {
@@ -19,7 +20,9 @@ struct MariaDBApp {
 
 impl MariaDBApp {
     fn new() -> MariaDBApp {
-        MariaDBApp { sql: String::from("") }
+        MariaDBApp {
+            sql: String::from(""),
+        }
     }
 }
 
@@ -30,7 +33,7 @@ fn convert_tx(tx: &[u8]) -> String {
 }
 
 impl abci::Application for MariaDBApp {
-    // Validate transactions.  Rule: SQL string must be valid SQL 
+    // Validate transactions.  Rule: SQL string must be valid SQL
     fn check_tx(&mut self, req: &RequestCheckTx) -> ResponseCheckTx {
         let sql = convert_tx(req.get_tx());
         let dialect = GenericDialect {};
@@ -41,16 +44,16 @@ impl abci::Application for MariaDBApp {
         // Validation Logic
         match ast {
             Ok(_val) => {
-              info!("Valid SQL");
-              // Update state to keep state correct for next check_tx call
-              self.sql = sql;
-            },
-            Err(_e) => { 
-              info!("Invalid SQL");
-              // Return error
-              resp.set_code(1);
-              resp.set_log(String::from("Must be valid sql!"));
-            },
+                info!("Valid SQL");
+                // Update state to keep state correct for next check_tx call
+                self.sql = sql;
+            }
+            Err(_e) => {
+                info!("Invalid SQL");
+                // Return error
+                resp.set_code(1);
+                resp.set_log(String::from("Must be valid sql!"));
+            }
         }
         return resp;
     }
