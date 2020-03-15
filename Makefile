@@ -1,13 +1,13 @@
 .PHONY: shell
 
 shell:
-	docker exec -it mariadb-proxy /bin/bash
+	docker exec -it proxy /bin/bash
 
 psql:
-	docker exec -it postgres-server psql -U postgres -d testdb
+	docker exec -it postgres-server psql --host proxy --username root --dbname testdb
 
-mariadb:
-	docker exec -it mariadb-server mysql --password=devpassword
+mysql:
+	docker exec -it mariadb-server mysql --host=proxy --user=root --password=devpassword testdb
 
 tendermint:
 	docker exec -it tendermint-node /bin/bash

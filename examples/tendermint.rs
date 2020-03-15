@@ -1,5 +1,3 @@
-extern crate mariadb_proxy;
-
 #[macro_use]
 extern crate log;
 

@@ -12,6 +12,14 @@ struct CounterHandler {
     count_map: HashMap<String, u64>,
 }
 
+impl CounterHandler {
+    fn new() -> CounterHandler {
+        CounterHandler {
+            count_map: HashMap::new(),
+        }
+    }
+}
+
 // Just forward the packet
 #[async_trait::async_trait]
 impl PacketHandler for CounterHandler {
@@ -42,27 +50,32 @@ impl PacketHandler for CounterHandler {
 #[tokio::main]
 async fn main() {
     env_logger::init();
+    let mut args = std::env::args().skip(1);
 
-    info!("Counter MariaDB proxy... ");
+    info!("Counter proxy... ");
 
     // determine address for the proxy to bind to
-    let bind_addr = env::args().nth(1).unwrap_or("0.0.0.0:3306".to_string());
+    //let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());    // MariaDB
+    let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:5432".to_string());      // Postgres
+
     // determine address of the MariaDB instance we are proxying for
-    let db_addr = env::args()
-        .nth(2)
-        .unwrap_or("postgres-server:3306".to_string());
+    //let db_addr = args.next().unwrap_or_else(|| "postgres-server:3306".to_string());    // MariaDB 
+    let db_addr = args.next().unwrap_or_else(|| "postgres-server:5432".to_string());      // Postgres
+    
+    // determine what type of database it is
+    let db_type_str = args.next().unwrap_or_else(|| "postgres".to_string());
+    let mut db_type = DatabaseType::PostgresSQL;
+    if db_type_str == "mariadb" {
+        db_type = DatabaseType::MariaDB;
+    }
 
     let mut server = mariadb_proxy::server::Server::new(
         bind_addr.clone(),
-        DatabaseType::PostgresSQL,
+        db_type,
         db_addr.clone(),
     )
     .await;
 
     info!("Proxy listening on: {}", bind_addr);
-    server
-        .run(CounterHandler {
-            count_map: HashMap::new(),
-        })
-        .await;
+    server.run(CounterHandler::new()).await;
 }

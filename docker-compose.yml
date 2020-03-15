@@ -9,8 +9,8 @@ services:
       - MYSQL_HOST=localhost
       - MYSQL_PORT=3306
       - MYSQL_ROOT_PASSWORD=devpassword
-    ports:
-      - 3306:3306  # for interop with locahost
+    links:
+      - proxy # To run the client from here
 
   postgres-server:
     image: postgres
@@ -20,24 +20,27 @@ services:
       - "/tmp/postgres:/var/lib/postgresql/data"
     environment:
       - POSTGRES_PASSWORD=devpassword
-    ports:
-      - 5432:5432  # for interop with locahost
+    links:
+      - proxy # To run the client from here
 
   adminer:
     image: adminer
+    container_name: adminer 
     restart: always
     ports:
       - 8080:8080
+    links:
+      - mariadb-server
+      - postgres-server
+      - proxy
 
-  mariadb-proxy:
+  proxy:
     image: rust
-    container_name: mariadb-proxy
+    container_name: proxy
     command: /bin/bash -c "while true; do sleep 200; echo 'TERMINAL is up'; done"
     volumes:
       - "./:/code"
     working_dir: /code
-    ports:
-      - "26658:26658"
     links:
       - mariadb-server
       - postgres-server
@@ -45,10 +48,10 @@ services:
   tendermint:
     image: tendermint/tendermint:v0.32.8
     container_name: tendermint-node
-    entrypoint: /bin/sh -c "tendermint init && tendermint unsafe_reset_all && tendermint node --consensus.create_empty_blocks=false --proxy_app=tcp://mariadb-proxy:26658 --rpc.laddr=tcp://0.0.0.0:26657"
+    entrypoint: /bin/sh -c "tendermint init && tendermint unsafe_reset_all && tendermint node --consensus.create_empty_blocks=false --proxy_app=tcp://proxy:26658 --rpc.laddr=tcp://0.0.0.0:26657"
     volumes:
       - "/tmp/tendermint:/tendermint"
     links:
       - mariadb-server
       - postgres-server
-      - mariadb-proxy
+      - proxy
