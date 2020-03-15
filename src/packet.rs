@@ -48,6 +48,10 @@ impl Packet {
         }
     }
 
+    pub fn get_size(&self) -> usize {
+        self.bytes.len()
+    }
+
     pub fn get_query(&self) -> Result<String, Error> {
         match (self.db_type, self.get_packet_type()) {
             (DatabaseType::MariaDB, Ok(PacketType::ComQuery)) => {
@@ -103,10 +107,14 @@ impl Packet {
                 0x18 => Ok(PacketType::ComStmtSendLongData),
                 0x19 => Ok(PacketType::ComStmtClose),
                 0x1a => Ok(PacketType::ComStmtReset),
+                0x1b => Ok(PacketType::ComSetOption),
+                0x1c => Ok(PacketType::ComStmtFetch),
                 0x1d => Ok(PacketType::ComDaemon),
                 0x1e => Ok(PacketType::ComBinlogDumpGtid),
                 0x1f => Ok(PacketType::ComResetConnection),
-                _ => Err(Error::new(ErrorKind::Other, "Invalid packet type")),
+                0xfe => Ok(PacketType::ComEof),
+                0xff => Ok(PacketType::ComErr),
+                _ => Err(Error::new(ErrorKind::Other, format!("Invalid packet type {:#04x}", self.bytes[4]))),
             },
 
             // https://www.postgresql.org/docs/12/protocol-message-types.html
@@ -307,9 +315,13 @@ pub enum PacketType {
     ComStmtSendLongData = 0x18,
     ComStmtClose = 0x19,
     ComStmtReset = 0x1a,
+    ComSetOption = 0x1b,
+    ComStmtFetch = 0x1c,
     ComDaemon = 0x1d,
     ComBinlogDumpGtid = 0x1e,
     ComResetConnection = 0x1f,
+    ComEof = 0xfe,
+    ComErr = 0xff,
 
     //PostgresSQL
     AuthenticationOk,

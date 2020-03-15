@@ -1,8 +1,7 @@
 #[macro_use]
 extern crate log;
 
-use std::{collections::HashMap, env};
-
+use std::collections::HashMap;
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,

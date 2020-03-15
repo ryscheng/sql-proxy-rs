@@ -4,12 +4,43 @@ extern crate log;
 use env_logger;
 use mysql::*;
 use mysql::prelude::*;
+use std::sync::Once;
+
+static INIT: Once = Once::new();
+
+#[async_trait::async_trait]
+impl PacketHandler for PassthroughHandler {
+    async fn handle_request(&mut self, p: &Packet) -> Packet {
+        p.clone()
+    }
+
+    async fn handle_response(&mut self, p: &Packet) -> Packet {
+        p.clone()
+    }
+}
+
+
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Payment {
     customer_id: i32,
     amount: i32,
     account_name: Option<String>,
+}
+
+pub fn initialize() {
+    INIT.call_once(|| {
+        let mut server = mariadb_proxy::server::Server::new(
+            bind_addr.clone(),
+            db_type,
+            db_addr.clone(),
+        )
+        .await;
+
+        info!("Proxy listening on: {}", bind_addr);
+        server.run(PassthroughHandler {}).await;
+
+    });
 }
 
 #[test]
