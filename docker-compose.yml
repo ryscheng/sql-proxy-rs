@@ -45,7 +45,7 @@ services:
   tendermint:
     image: tendermint/tendermint:v0.32.9
     container_name: tendermint-node
-    entrypoint: /bin/sh -c "tendermint init && tendermint node --consensus.create_empty_blocks=false --proxy_app=tcp://mariadb-proxy:26658 --rpc.laddr=tcp://0.0.0.0:26657"
+    entrypoint: /bin/sh -c "tendermint init && tendermint unsafe_reset_all && tendermint node --consensus.create_empty_blocks=false --proxy_app=tcp://mariadb-proxy:26658 --rpc.laddr=tcp://0.0.0.0:26657"
     volumes:
       - "/tmp/tendermint:/tendermint"
     links:
