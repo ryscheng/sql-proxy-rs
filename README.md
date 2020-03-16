@@ -1,6 +1,5 @@
-# mariadb-proxy-rs
+# sql-proxy-rs
 Programmable Postgres/MariaDB Proxy for Rust
-
 
 # Running Examples
 

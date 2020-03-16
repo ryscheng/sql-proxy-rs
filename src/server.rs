@@ -19,8 +19,8 @@ pub struct Server {
 impl Server {
     pub async fn new(bind_addr: String, db_type: DatabaseType, db_addr: String) -> Server {
         Server {
-            db_type: db_type,
-            db_addr: db_addr,
+            db_type,
+            db_addr,
             listener: TcpListener::bind(bind_addr)
                 .await
                 .expect("Unable to bind to bind_addr"),

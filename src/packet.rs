@@ -12,10 +12,7 @@ pub struct Packet {
 
 impl Packet {
     pub fn new(db_type: DatabaseType, bytes: Vec<u8>) -> Packet {
-        Packet {
-            db_type: db_type,
-            bytes: bytes,
-        }
+        Packet { db_type, bytes }
     }
 
     /**
@@ -156,14 +153,14 @@ impl Packet {
                 '3' => Ok(PacketType::CloseComplete),
                 'C' => {
                     if self.bytes.len() < 6 {
-                        return Err(Error::new(
+                        Err(Error::new(
                             ErrorKind::Other,
                             "Invalid packet type: Close/CommandComplete packet too short",
-                        ));
+                        ))
                     } else if self.bytes[5] as char == 'S' || self.bytes[5] as char == 'P' {
-                        return Ok(PacketType::Close);
+                        Ok(PacketType::Close)
                     } else {
-                        return Ok(PacketType::CommandComplete);
+                        Ok(PacketType::CommandComplete)
                     }
                 }
                 'd' => Ok(PacketType::CopyData),
@@ -179,31 +176,31 @@ impl Packet {
                     }
                     let length = BigEndian::read_u32(&self.bytes[1..5]);
                     if length == 4 {
-                        return Ok(PacketType::Flush);
+                        Ok(PacketType::Flush)
                     } else {
-                        return Ok(PacketType::CopyOutResponse);
+                        Ok(PacketType::CopyOutResponse)
                     }
                 }
                 'W' => Ok(PacketType::CopyBothResponse),
                 'D' => {
                     if self.bytes.len() < 6 {
-                        return Err(Error::new(
+                        Err(Error::new(
                             ErrorKind::Other,
                             "Invalid packet type: DataRow/Describe packet too short",
-                        ));
+                        ))
                     } else if self.bytes[5] as char == 'S' || self.bytes[5] as char == 'P' {
-                        return Ok(PacketType::Describe);
+                        Ok(PacketType::Describe)
                     } else {
-                        return Ok(PacketType::DataRow);
+                        Ok(PacketType::DataRow)
                     }
                 }
                 'I' => Ok(PacketType::EmptyQueryResponse),
                 'E' => {
                     if self.bytes.len() < 6 {
-                        return Err(Error::new(
+                        Err(Error::new(
                             ErrorKind::Other,
                             "Invalid packet type: Execute/ErrorResponse packet too short",
-                        ));
+                        ))
                     // https://www.postgresql.org/docs/12/protocol-error-fields.html
                     } else if self.bytes[5] as char == 'S'
                         || self.bytes[5] as char == 'V'
@@ -226,9 +223,9 @@ impl Packet {
                         || self.bytes[5] as char == 'R'
                         || self.bytes[5] as char == 'P'
                     {
-                        return Ok(PacketType::ErrorResponse);
+                        Ok(PacketType::ErrorResponse)
                     } else {
-                        return Ok(PacketType::Execute);
+                        Ok(PacketType::Execute)
                     }
                 }
                 'F' => Ok(PacketType::FunctionCall),
@@ -248,9 +245,9 @@ impl Packet {
                     }
                     let length = BigEndian::read_u32(&self.bytes[1..5]);
                     if length == 4 {
-                        return Ok(PacketType::Sync);
+                        Ok(PacketType::Sync)
                     } else {
-                        return Ok(PacketType::ParameterStatus);
+                        Ok(PacketType::ParameterStatus)
                     }
                 }
                 'P' => Ok(PacketType::Parse),
@@ -270,10 +267,10 @@ impl Packet {
                     let length = BigEndian::read_u32(&self.bytes[0..4]);
                     let payload = BigEndian::read_u32(&self.bytes[4..8]);
                     match (length, payload) {
-                        (16, 80877102) => Ok(PacketType::CancelRequest),
-                        (8, 80877103) => Ok(PacketType::SSLRequest),
-                        (8, 80877104) => Ok(PacketType::GSSENCRequest),
-                        (_, 196608) => Ok(PacketType::StartupMessage),
+                        (16, 80_877_102) => Ok(PacketType::CancelRequest),
+                        (8, 80_877_103) => Ok(PacketType::SSLRequest),
+                        (8, 80_877_104) => Ok(PacketType::GSSENCRequest),
+                        (_, 196_608) => Ok(PacketType::StartupMessage),
                         _ => Err(Error::new(ErrorKind::Other, "Invalid packet type")),
                     }
                 }

@@ -4,7 +4,7 @@ extern crate log;
 use futures::channel::oneshot;
 use std::{error::Error, sync::Once};
 use tokio;
-use tokio_postgres::{NoTls,SimpleQueryMessage};
+use tokio_postgres::{NoTls, SimpleQueryMessage};
 
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
@@ -85,26 +85,32 @@ async fn postgres_can_proxy_requests() -> Result<(), Box<dyn Error>> {
     });
     debug!("Initialized SQL client");
 
-    client.batch_execute(
-        "
+    client
+        .batch_execute(
+            "
         CREATE TEMPORARY TABLE person (
             id      SERIAL PRIMARY KEY,
             name    TEXT NOT NULL,
             gender  TEXT NOT NULL
         );
-        "
-    ).await?;
+        ",
+        )
+        .await?;
     debug!("Created temporary table");
 
-    client.batch_execute(
-        "
+    client
+        .batch_execute(
+            "
         INSERT INTO person (name, gender) VALUES ('Alice', 'Female');
         INSERT INTO person (name, gender) VALUES ('Bob', 'Male');
-        "
-    ).await?;
+        ",
+        )
+        .await?;
     debug!("Insert into payments");
 
-    let rows = client.simple_query("SELECT name, gender FROM person;").await?;
+    let rows = client
+        .simple_query("SELECT name, gender FROM person;")
+        .await?;
     debug!("Select from payments");
 
     if let SimpleQueryMessage::Row(row) = &rows[0] {
