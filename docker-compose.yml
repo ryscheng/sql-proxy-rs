@@ -6,9 +6,10 @@ services:
     container_name: mariadb-server
     restart: always
     environment:
-      - MYSQL_HOST=localhost
-      - MYSQL_PORT=3306
-      - MYSQL_ROOT_PASSWORD=devpassword
+      - MYSQL_DATABASE=testdb
+      - MYSQL_ROOT_PASSWORD=testpassword
+      - MYSQL_USER=testuser
+      - MYSQL_PASSWORD=testpassword
     links:
       - proxy # To run the client from here
 
@@ -19,6 +20,8 @@ services:
     volumes:
       - "/tmp/postgres:/var/lib/postgresql/data"
     environment:
+      - POSTGRES_DB=testdb
+      - POSTGRES_USER=root
       - POSTGRES_PASSWORD=devpassword
     links:
       - proxy # To run the client from here

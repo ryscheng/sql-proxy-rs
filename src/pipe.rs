@@ -132,7 +132,7 @@ fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet>
 
                 if list.contains(&id) {
                     let l = BigEndian::read_u32(&packet_buf[1..5]) as usize;
-                    let s = 5 + l;
+                    let s = 1 + l;
                     trace!(
                         "get_packet(PostgresSQL): type={}, size={}, length={}",
                         id,
@@ -151,10 +151,10 @@ fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet>
                     }
                 } else {
                     let l = BigEndian::read_u32(&packet_buf[0..4]) as usize;
-                    let s = 4 + l;
+                    let s = l;
                     trace!(
-                        "get_packet(PostgresSQL): firstbyte={}, size={}, length={}",
-                        id,
+                        "get_packet(PostgresSQL): firstbyte={:#04x}, size={}, length={}",
+                        packet_buf[0],
                         s,
                         l
                     );

@@ -6,27 +6,36 @@ Programmable Postgres/MariaDB Proxy for Rust
 
 ## Setting up
 
-You'll need an instance of either Postgres or MariaDB running. If you have Docker installed, there are some convenience scripts
+You'll need an instance of either Postgres or MariaDB running. If you have Docker Compose installed, this will bring up a PostgresSQL server, MariaDB server, and a container for compiling Rust.
 
 ```bash
-$ bash scripts/docker-mariadb-server.sh    # Will start a MariaDB container in the background
-# OR
-$ bash scripts/docker-postgres-server.sh   # Will start a Postgres container in the background
+$ docker-compose up
 ```
 
 To open an interactive shell into a Rust development container on the same network:
 
 ``` bash
-$ bash scripts/docker-enter.sh    # Will open an interactive shell into a Rust development container on the same network as MariaDB
+$ make shell
 ```
 
+## Running tests
+
+We currently have integration tests that test an end-to-end passthrough proxy.
+Run the following in the interactive shell (described above)
+
+```bash
+$ cargo test
+```
 
 ## Passthrough proxy
 
 This example just silently forwards packets back and forth
 
 ```bash
-$ RUST_LOG=info cargo run --example passthrough
+$ RUST_LOG=info cargo run --example passthrough -- BIND_ADDR DB_ADDR [mariadb/postgres]
+# For example:
+$ RUST_LOG=info cargo run --example passthrough -- 0.0.0.0:3306 mariadb-server::3306 mariadb
+$ RUST_LOG=info cargo run --example passthrough -- 0.0.0.0:5432 postgres-server::5432 postgres
 ```
 
 ## Counter proxy
@@ -34,7 +43,10 @@ $ RUST_LOG=info cargo run --example passthrough
 This example is the same as passthrough proxy, except it also logs any queries counts the types of queries going through (e.g. select, insert, create, etc.)
 
 ```bash
-$ RUST_LOG=info cargo run --example counter 
+$ RUST_LOG=info cargo run --example counter -- BIND_ADDR DB_ADDR [mariadb/postgres]
+# For example:
+$ RUST_LOG=info cargo run --example counter -- 0.0.0.0:3306 mariadb-server::3306 mariadb
+$ RUST_LOG=info cargo run --example counter -- 0.0.0.0:5432 postgres-server::5432 postgres
 ```
 
 ## Tendermint proxy
@@ -46,9 +58,11 @@ $ RUST_LOG=info cargo run --example tendermint
 ```
 
 # Running a SQL client
-Assuming you used the previous setup scripts to run a proxy and MariaDB instance,
-you can use the following script to connect to your proxy and issue SQL commands
+Assuming you used the previous setup scripts to run a proxy,
+you can use the following script to connect to your proxy and interactively issue SQL commands
 
 ```bash
-$ bash scripts/docker-sqlclient.sh
+$ make mysql    # client to a MariaDB proxy
+OR 
+$ make psql     # client to a Postgres proxy
 ```
