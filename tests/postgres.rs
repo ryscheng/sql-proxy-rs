@@ -3,6 +3,26 @@ extern crate log;
 
 use env_logger;
 use postgres::{Client, NoTls};
+use mariadb_proxy::{
+    packet::{DatabaseType, Packet},
+    packet_handler::PacketHandler,
+};
+use tokio::task::JoinHandle;
+
+struct PassthroughHandler {}
+
+#[async_trait::async_trait]
+impl PacketHandler for PassthroughHandler {
+    async fn handle_request(&mut self, p: &Packet) -> Packet {
+        debug!("c=>s: {:?} packet: {} bytes", p.get_packet_type(), p.get_size());
+        p.clone()
+    }
+
+    async fn handle_response(&mut self, p: &Packet) -> Packet {
+        debug!("c<=s: {:?} packet: {} bytes", p.get_packet_type(), p.get_size());
+        p.clone()
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Payment {
@@ -11,7 +31,26 @@ struct Payment {
     account_name: Option<String>,
 }
 
-fn can_proxy_requests_to_tendermint() {
+async fn initialize() -> JoinHandle<()> {
+    let mut server = mariadb_proxy::server::Server::new(
+        "0.0.0.0:5432".to_string(),
+        DatabaseType::PostgresSQL,
+        "postgres-server:5432".to_string(),
+    )
+    .await;
+
+    // Spawn server on separate task
+    //let (tx, rx) = oneshot::channel();
+    tokio::spawn(async move {
+        info!("Proxy listening on: 0.0.0.0:5432");
+        server.run(PassthroughHandler {}).await;
+    })
+}
+
+#[tokio::test]
+async fn can_proxy_requests() {
+    let kill = initialize().await;
+
     let mut client = Client::connect("postgresql://postgres:devpassword@mariadb-proxy:5432/testdb", NoTls).unwrap();
 
     client.batch_execute("

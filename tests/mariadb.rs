@@ -50,7 +50,7 @@ async fn initialize() -> JoinHandle<()> {
 }
 
 #[tokio::test]
-async fn can_proxy_requests_to_tendermint() -> Result<()> {
+async fn can_proxy_requests() -> Result<()> {
     let kill = initialize().await;
 
     let database_uri = "mysql://root:devpassword@localhost:3306/testdb";
