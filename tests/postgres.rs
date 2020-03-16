@@ -2,14 +2,16 @@
 extern crate log;
 
 use futures::channel::oneshot;
-use std::error::Error;
+use std::{error::Error, sync::Once};
 use tokio;
-use tokio_postgres::NoTls;
+use tokio_postgres::{NoTls,SimpleQueryMessage};
 
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
+
+static INIT: Once = Once::new();
 
 struct PassthroughHandler {}
 
@@ -42,6 +44,11 @@ struct Payment {
 }
 
 async fn initialize() -> oneshot::Sender<()> {
+    INIT.call_once(|| {
+        env_logger::init();
+    });
+
+    debug!("Constructing server");
     let mut server = mariadb_proxy::server::Server::new(
         "0.0.0.0:5432".to_string(),
         DatabaseType::PostgresSQL,
@@ -50,11 +57,13 @@ async fn initialize() -> oneshot::Sender<()> {
     .await;
 
     // Spawn server on separate task
+    debug!("Spawning async server task");
     let (tx, rx) = oneshot::channel();
     tokio::spawn(async move {
         info!("Proxy listening on: 0.0.0.0:5432");
         server.run(PassthroughHandler {}, rx).await;
     });
+    debug!("async server task running");
     tx
 }
 
@@ -76,42 +85,40 @@ async fn postgres_can_proxy_requests() -> Result<(), Box<dyn Error>> {
     });
     debug!("Initialized SQL client");
 
-    client
-        .batch_execute(
-            "
+    client.batch_execute(
+        "
         CREATE TEMPORARY TABLE person (
             id      SERIAL PRIMARY KEY,
             name    TEXT NOT NULL,
             gender  TEXT NOT NULL
-        )
-    ",
-        )
-        .await?;
+        );
+        "
+    ).await?;
     debug!("Created temporary table");
 
-    client
-        .execute(
-            "INSERT INTO person (name, gender) VALUES ($1, $2)",
-            &[&"Alice", &"Female"],
-        )
-        .await?;
-
-    client
-        .execute(
-            "INSERT INTO person (name, gender) VALUES ($1, $2)",
-            &[&"Bob", &"Male"],
-        )
-        .await?;
+    client.batch_execute(
+        "
+        INSERT INTO person (name, gender) VALUES ('Alice', 'Female');
+        INSERT INTO person (name, gender) VALUES ('Bob', 'Male');
+        "
+    ).await?;
     debug!("Insert into payments");
 
-    let rows = client.query("SELECT name, gender FROM person", &[]).await?;
+    let rows = client.simple_query("SELECT name, gender FROM person;").await?;
     debug!("Select from payments");
 
-    // Assert data is correct
-    assert_eq!(rows[0].get::<_, &str>(0), "Alice");
-    assert_eq!(rows[0].get::<_, &str>(1), "Female");
-    assert_eq!(rows[1].get::<_, &str>(0), "Bob");
-    assert_eq!(rows[1].get::<_, &str>(1), "Male");
+    if let SimpleQueryMessage::Row(row) = &rows[0] {
+        assert_eq!(row.get(0).unwrap(), "Alice");
+        assert_eq!(row.get(1).unwrap(), "Female");
+    } else {
+        panic!("Missing row[0]");
+    }
+    if let SimpleQueryMessage::Row(row) = &rows[1] {
+        assert_eq!(row.get(0).unwrap(), "Bob");
+        assert_eq!(row.get(1).unwrap(), "Male");
+    } else {
+        panic!("Missing row[1]");
+    }
 
     debug!("Killing server");
     kill_switch.send(()).unwrap();
