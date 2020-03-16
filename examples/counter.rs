@@ -3,11 +3,11 @@ extern crate log;
 
 use async_std::io;
 use futures::channel::oneshot;
-use std::collections::HashMap;
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
+use std::collections::HashMap;
 
 struct CounterHandler {
     count_map: HashMap<String, u64>,
@@ -57,12 +57,14 @@ async fn main() {
 
     // determine address for the proxy to bind to
     //let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());    // MariaDB
-    let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:5432".to_string());      // Postgres
+    let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:5432".to_string()); // Postgres
 
     // determine address of the MariaDB instance we are proxying for
-    //let db_addr = args.next().unwrap_or_else(|| "postgres-server:3306".to_string());    // MariaDB 
-    let db_addr = args.next().unwrap_or_else(|| "postgres-server:5432".to_string());      // Postgres
-    
+    //let db_addr = args.next().unwrap_or_else(|| "postgres-server:3306".to_string());    // MariaDB
+    let db_addr = args
+        .next()
+        .unwrap_or_else(|| "postgres-server:5432".to_string()); // Postgres
+
     // determine what type of database it is
     let db_type_str = args.next().unwrap_or_else(|| "postgres".to_string());
     let mut db_type = DatabaseType::PostgresSQL;
@@ -70,12 +72,8 @@ async fn main() {
         db_type = DatabaseType::MariaDB;
     }
 
-    let mut server = mariadb_proxy::server::Server::new(
-        bind_addr.clone(),
-        db_type,
-        db_addr.clone(),
-    )
-    .await;
+    let mut server =
+        mariadb_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
 
     info!("Proxy listening on: {}", bind_addr);
     let (tx, rx) = oneshot::channel(); // kill switch
@@ -92,5 +90,4 @@ async fn main() {
         Err(_) => tx.send(()).unwrap(),
     };
     info!("...exiting");
-
 }

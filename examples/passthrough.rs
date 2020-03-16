@@ -14,12 +14,20 @@ struct PassthroughHandler {}
 #[async_trait::async_trait]
 impl PacketHandler for PassthroughHandler {
     async fn handle_request(&mut self, p: &Packet) -> Packet {
-        debug!("c=>s: {:?} packet: {} bytes", p.get_packet_type(), p.get_size());
+        debug!(
+            "c=>s: {:?} packet: {} bytes",
+            p.get_packet_type(),
+            p.get_size()
+        );
         p.clone()
     }
 
     async fn handle_response(&mut self, p: &Packet) -> Packet {
-        debug!("c<=s: {:?} packet: {} bytes", p.get_packet_type(), p.get_size());
+        debug!(
+            "c<=s: {:?} packet: {} bytes",
+            p.get_packet_type(),
+            p.get_size()
+        );
         p.clone()
     }
 }
@@ -33,12 +41,14 @@ async fn main() {
 
     // determine address for the proxy to bind to
     //let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());    // MariaDB
-    let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:5432".to_string());      // Postgres
+    let bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:5432".to_string()); // Postgres
 
     // determine address of the MariaDB instance we are proxying for
-    //let db_addr = args.next().unwrap_or_else(|| "mariadb-server:3306".to_string());    // MariaDB 
-    let db_addr = args.next().unwrap_or_else(|| "postgres-server:5432".to_string());      // Postgres
-    
+    //let db_addr = args.next().unwrap_or_else(|| "mariadb-server:3306".to_string());    // MariaDB
+    let db_addr = args
+        .next()
+        .unwrap_or_else(|| "postgres-server:5432".to_string()); // Postgres
+
     // determine what type of database it is
     //let db_type_str = args.next().unwrap_or_else(|| "mariadb".to_string());
     let db_type_str = args.next().unwrap_or_else(|| "postgres".to_string());
@@ -47,12 +57,8 @@ async fn main() {
         db_type = DatabaseType::MariaDB;
     }
 
-    let mut server = mariadb_proxy::server::Server::new(
-        bind_addr.clone(),
-        db_type,
-        db_addr.clone(),
-    )
-    .await;
+    let mut server =
+        mariadb_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
 
     let (tx, rx) = oneshot::channel(); // kill switch
     tokio::spawn(async move {

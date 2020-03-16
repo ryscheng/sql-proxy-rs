@@ -114,7 +114,10 @@ impl Packet {
                 0x1f => Ok(PacketType::ComResetConnection),
                 0xfe => Ok(PacketType::ComEof),
                 0xff => Ok(PacketType::ComErr),
-                _ => Err(Error::new(ErrorKind::Other, format!("Invalid packet type {:#04x}", self.bytes[4]))),
+                _ => Err(Error::new(
+                    ErrorKind::Other,
+                    format!("Invalid packet type {:#04x}", self.bytes[4]),
+                )),
             },
 
             // https://www.postgresql.org/docs/12/protocol-message-types.html

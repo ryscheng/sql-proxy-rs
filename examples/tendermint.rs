@@ -3,8 +3,7 @@ extern crate log;
 
 use abci::*;
 use env_logger;
-use futures::channel::oneshot;
-use futures::executor::block_on;
+use futures::{channel::oneshot, executor::block_on};
 use hex;
 use http::uri::Uri;
 use hyper;
@@ -12,14 +11,13 @@ use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
-use mysql::{from_row, from_value, Pool, Value, TxOpts};
-use mysql::prelude::*;
-use tokio_postgres::{Client, NoTls, connect};
+use mysql::{from_row, from_value, prelude::*, Pool, TxOpts, Value};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sodiumoxide::crypto::hash;
 use sqlparser::{dialect::GenericDialect, parser::Parser};
 use std::io::{Error, ErrorKind};
 use tokio;
+use tokio_postgres::{connect, Client, NoTls};
 use urlencoding;
 
 const DELIMITER: &str = "!_!";
@@ -99,7 +97,8 @@ impl Application for AbciApp {
 
         match self.db_type {
             DatabaseType::MariaDB => {
-                let sql_query = "SELECT MAX(block_height) AS max_height, app_hash FROM tendermint_blocks;";
+                let sql_query =
+                    "SELECT MAX(block_height) AS max_height, app_hash FROM tendermint_blocks;";
                 match self.sql_pool.get_conn().unwrap().exec_iter(sql_query, ()) {
                     Ok(rows) => {
                         for row in rows {
@@ -130,11 +129,9 @@ impl Application for AbciApp {
 
                     // different for postgres
                     let sql_query = "select block_height, app_hash from tendermint_blocks where block_height = (select max(block_height) from tendermint_blocks);";
- 
-                    let rows = self.pg_client
-                        .query(sql_query, &[])
-                        .await.unwrap();
-                    
+
+                    let rows = self.pg_client.query(sql_query, &[]).await.unwrap();
+
                     if rows.len() == 0 {
                         self.block_height = 0;
                         self.app_hash = "start".to_string();
@@ -397,27 +394,37 @@ async fn main() {
     // mariadb
     let mariadb_bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());
     let mariadb_db_uri_str = args
-    .next()
-    .unwrap_or_else(|| "mysql://root:devpassword@mariadb-server:3306/testdb".to_string());
+        .next()
+        .unwrap_or_else(|| "mysql://root:devpassword@mariadb-server:3306/testdb".to_string());
 
     let mariadb_db_uri = mariadb_db_uri_str.parse::<Uri>().unwrap();
-    let mariadb_db_addr =
-        mariadb_db_uri.host().unwrap().to_string() + ":" + &mariadb_db_uri.port_u16().unwrap().to_string();
+    let mariadb_db_addr = mariadb_db_uri.host().unwrap().to_string()
+        + ":"
+        + &mariadb_db_uri.port_u16().unwrap().to_string();
 
     // postgres
     let postgres_bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:5432".to_string());
-    let postgres_db_uri_str = args
-        .next()
-        .unwrap_or_else(|| "postgresql://postgres:devpassword@postgres-server:5432/testdb".to_string());
+    let postgres_db_uri_str = args.next().unwrap_or_else(|| {
+        "postgresql://postgres:devpassword@postgres-server:5432/testdb".to_string()
+    });
 
     let postgres_db_uri = postgres_db_uri_str.parse::<Uri>().unwrap();
-    let postgres_db_addr =
-        postgres_db_uri.host().unwrap().to_string() + ":" + &postgres_db_uri.port_u16().unwrap().to_string();
+    let postgres_db_addr = postgres_db_uri.host().unwrap().to_string()
+        + ":"
+        + &postgres_db_uri.port_u16().unwrap().to_string();
 
     let db_type = DatabaseType::PostgresSQL;
     // let db_type = DatabaseType::MariaDB;
-    let bind_addr = if db_type == DatabaseType::MariaDB { mariadb_bind_addr } else { postgres_bind_addr };
-    let db_addr = if db_type == DatabaseType::MariaDB { mariadb_db_addr } else { postgres_db_addr };
+    let bind_addr = if db_type == DatabaseType::MariaDB {
+        mariadb_bind_addr
+    } else {
+        postgres_bind_addr
+    };
+    let db_addr = if db_type == DatabaseType::MariaDB {
+        mariadb_db_addr
+    } else {
+        postgres_db_addr
+    };
 
     // determine address for the ABCI application
     let abci_addr = args.next().unwrap_or("0.0.0.0:26658".to_string());
@@ -427,12 +434,8 @@ async fn main() {
     // let handler = ProxyHandler { node_id: node_id.clone(), tendermint_addr: tendermint_addr, http_client: Client::new() };
     let handler = ProxyHandler::new(node_id.clone(), db_type, tendermint_addr);
 
-    let mut server = mariadb_proxy::server::Server::new(
-        bind_addr.clone(),
-        db_type,
-        db_addr.clone(),
-    )
-    .await;
+    let mut server =
+        mariadb_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
 
     let (_, rx) = oneshot::channel(); // kill switch
     tokio::spawn(async move {
@@ -440,9 +443,13 @@ async fn main() {
         server.run(handler, rx).await;
     });
 
-    let (client, connection) =
-        connect("postgresql://postgres:devpassword@postgres-server:5432/testdb", NoTls).await.unwrap();
-    
+    let (client, connection) = connect(
+        "postgresql://postgres:devpassword@postgres-server:5432/testdb",
+        NoTls,
+    )
+    .await
+    .unwrap();
+
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
@@ -457,7 +464,7 @@ async fn main() {
             node_id.clone(),
             Pool::new(mariadb_db_uri_str).unwrap(),
             client,
-            db_type
-        )
+            db_type,
+        ),
     );
 }

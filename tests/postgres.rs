@@ -2,24 +2,32 @@
 extern crate log;
 
 use futures::channel::oneshot;
-use tokio_postgres::NoTls;
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
 use std::error::Error;
+use tokio_postgres::NoTls;
 
 struct PassthroughHandler {}
 
 #[async_trait::async_trait]
 impl PacketHandler for PassthroughHandler {
     async fn handle_request(&mut self, p: &Packet) -> Packet {
-        debug!("c=>s: {:?} packet: {} bytes", p.get_packet_type(), p.get_size());
+        debug!(
+            "c=>s: {:?} packet: {} bytes",
+            p.get_packet_type(),
+            p.get_size()
+        );
         p.clone()
     }
 
     async fn handle_response(&mut self, p: &Packet) -> Packet {
-        debug!("c<=s: {:?} packet: {} bytes", p.get_packet_type(), p.get_size());
+        debug!(
+            "c<=s: {:?} packet: {} bytes",
+            p.get_packet_type(),
+            p.get_size()
+        );
         p.clone()
     }
 }
@@ -52,30 +60,42 @@ async fn initialize() -> oneshot::Sender<()> {
 async fn can_proxy_requests() -> Result<(), Box<dyn Error>> {
     let kill_switch = initialize().await;
 
-    let (client, connection) = tokio_postgres::connect("postgresql://postgres:devpassword@mariadb-proxy:5432/testdb", NoTls).await?;
+    let (client, connection) = tokio_postgres::connect(
+        "postgresql://postgres:devpassword@mariadb-proxy:5432/testdb",
+        NoTls,
+    )
+    .await?;
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
         }
     });
 
-    client.batch_execute("
+    client
+        .batch_execute(
+            "
         CREATE TEMPORARY TABLE person (
             id      SERIAL PRIMARY KEY,
             name    TEXT NOT NULL,
             gender  TEXT NOT NULL
         )
-    ").await?;
+    ",
+        )
+        .await?;
 
-    client.execute(
-        "INSERT INTO person (name, gender) VALUES ($1, $2)",
-        &[&"Alice", &"Female"]
-    ).await?;
+    client
+        .execute(
+            "INSERT INTO person (name, gender) VALUES ($1, $2)",
+            &[&"Alice", &"Female"],
+        )
+        .await?;
 
-    client.execute(
-        "INSERT INTO person (name, gender) VALUES ($1, $2)",
-        &[&"Bob", &"Male"]
-    ).await?;
+    client
+        .execute(
+            "INSERT INTO person (name, gender) VALUES ($1, $2)",
+            &[&"Bob", &"Male"],
+        )
+        .await?;
 
     let rows = client.query("SELECT name, gender FROM person", &[]).await?;
 

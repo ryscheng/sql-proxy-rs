@@ -124,15 +124,27 @@ fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet>
         }
         DatabaseType::PostgresSQL => {
             if packet_buf.len() > 5 {
-                let list = ['R', 'K', 'B', '2', '3', 'C', 'd', 'c', 'f', 'G', 'H', 'W', 'D', 'I', 'E', 'F', 'V', 'p', 'v', 'n', 'N', 'A', 't', 'S', 'P', '1', 's', 'Q', 'Z', 'T', 'X'];
+                let list = [
+                    'R', 'K', 'B', '2', '3', 'C', 'd', 'c', 'f', 'G', 'H', 'W', 'D', 'I', 'E', 'F',
+                    'V', 'p', 'v', 'n', 'N', 'A', 't', 'S', 'P', '1', 's', 'Q', 'Z', 'T', 'X',
+                ];
                 let id = packet_buf[0] as char;
 
                 if list.contains(&id) {
                     let l = BigEndian::read_u32(&packet_buf[1..5]) as usize;
                     let s = 5 + l;
+                    trace!(
+                        "get_packet(PostgresSQL): type={}, size={}, length={}",
+                        id,
+                        s,
+                        l
+                    );
                     // Check for entire packet size
                     if packet_buf.len() >= s {
-                        let p = Packet::new(DatabaseType::PostgresSQL, packet_buf.drain(0..s).collect());
+                        let p = Packet::new(
+                            DatabaseType::PostgresSQL,
+                            packet_buf.drain(0..s).collect(),
+                        );
                         Some(p)
                     } else {
                         None
@@ -140,9 +152,18 @@ fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet>
                 } else {
                     let l = BigEndian::read_u32(&packet_buf[0..4]) as usize;
                     let s = 4 + l;
+                    trace!(
+                        "get_packet(PostgresSQL): firstbyte={}, size={}, length={}",
+                        id,
+                        s,
+                        l
+                    );
                     // Check for entire packet size
                     if packet_buf.len() >= s {
-                        let p = Packet::new(DatabaseType::PostgresSQL, packet_buf.drain(0..s).collect());
+                        let p = Packet::new(
+                            DatabaseType::PostgresSQL,
+                            packet_buf.drain(0..s).collect(),
+                        );
                         Some(p)
                     } else {
                         None
