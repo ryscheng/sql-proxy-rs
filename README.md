@@ -1,5 +1,6 @@
 # sql-proxy-rs
 ![](https://github.com/ryscheng/sql-proxy-rs/workflows/CI/badge.svg)
+
 Programmable Postgres/MariaDB Proxy for Rust
 
 # Running Examples
