@@ -6,6 +6,7 @@ use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
+use std::io::{self, BufRead};
 
 struct PassthroughHandler {}
 
@@ -52,7 +53,15 @@ async fn main() {
     )
     .await;
 
-    info!("Proxy listening on: {}", bind_addr);
-    let (_, rx) = oneshot::channel();
-    server.run(PassthroughHandler {}, rx).await;
+    let (tx, rx) = oneshot::channel(); // kill switch
+    tokio::spawn(async move {
+        info!("Proxy listening on: {}", bind_addr);
+        server.run(PassthroughHandler {}, rx).await;
+    });
+
+    // Run until use hits enter
+    let stdin = io::stdin();
+    let mut iterator = stdin.lock().lines();
+    let _ = iterator.next().unwrap().unwrap();
+    tx.send(());
 }

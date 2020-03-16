@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::rc::Rc;
 use futures::{
     channel::oneshot,
     future::FutureExt, // for `.fuse()`
@@ -20,20 +21,20 @@ pub struct Server {
     db_type: DatabaseType,
     db_addr: String,
     listener: TcpListener,
+    kill_switches: Vec<oneshot::Sender<()>>,
 }
 
 impl Server {
     pub async fn new(bind_addr: String, db_type: DatabaseType, db_addr: String) -> Server {
         Server {
-            db_type,
-            db_addr,
-            listener: TcpListener::bind(bind_addr)
-                .await
-                .expect("Unable to bind to bind_addr"),
+            db_type: db_type,
+            db_addr: db_addr,
+            listener: TcpListener::bind(bind_addr).await.expect("Unable to bind to bind_addr"),
+            kill_switches: Vec::new(),
         }
     }
 
-    async fn create_pipes<T: PacketHandler + Send + Sync + 'static>(db_addr: String, db_type: DatabaseType, mut client_socket: TcpStream, handler_ref: Arc<Mutex<T>>) {
+    async fn create_pipes<T: PacketHandler + Send + Sync + 'static>(db_addr: String, db_type: DatabaseType, mut client_socket: TcpStream, handler_ref: Arc<Mutex<T>>, kill_switch_receiver: oneshot::Receiver<()>) {
         let client_addr = match client_socket.peer_addr() {
             Ok(addr) => addr.to_string(),
             Err(_e) => String::from("Unknown"),
@@ -63,14 +64,17 @@ impl Server {
                 server_reader,
                 client_writer,
             );
-            match try_join!(forward_pipe.run(), backward_pipe.run()) {
-                Ok(((), ())) => {
-                    trace!("Pipe closed successfully");
+            select! {
+                _ = forward_pipe.run().fuse() => {
+                    trace!("Pipe closed via forward pipe");
+                },
+                _ = backward_pipe.run().fuse() => {
+                    trace!("Pipe closed via backward pipe");
+                },
+                _ = kill_switch_receiver.fuse() => {
+                    trace!("Pipe closed via kill switch");
                 }
-                Err(e) => {
-                    error!("Pipe closed with error: {}", e);
-                }
-            };
+            }
             debug!("Closing connection from {:?}", client_socket.peer_addr());
         });
 
@@ -89,7 +93,9 @@ impl Server {
                     if let Some(conn) = some_conn {
                         match conn {
                             Ok(mut client_socket) => {
-                                Server::create_pipes(db_addr.clone(), db_type, client_socket, packet_handler.clone());
+                                let (tx, rx) = oneshot::channel();
+                                self.kill_switches.push(tx);
+                                Server::create_pipes(db_addr.clone(), db_type, client_socket, packet_handler.clone(), rx);
                             },
                             Err(err) => {
                                 // Handle error by printing to STDOUT.
@@ -102,6 +108,11 @@ impl Server {
                     }
                 },
                 _ = kill_switch_receiver => {
+                    info!("Received a kill switch at the server");
+                    // Kill all pipes
+                    while let Some(s) = self.kill_switches.pop() {
+                        s.send(());
+                    }
                     break
                 },
             }

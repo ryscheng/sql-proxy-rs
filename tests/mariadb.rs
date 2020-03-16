@@ -4,12 +4,15 @@ extern crate log;
 use futures::channel::oneshot;
 use mysql::*;
 use mysql::prelude::*;
+use std::sync::Once;
 use tokio::task::JoinHandle;
 
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
+
+static INIT: Once = Once::new();
 
 struct PassthroughHandler {}
 
@@ -26,14 +29,11 @@ impl PacketHandler for PassthroughHandler {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct Payment {
-    customer_id: i32,
-    amount: i32,
-    account_name: Option<String>,
-}
-
 async fn initialize() -> oneshot::Sender<()> {
+    INIT.call_once(|| {
+        env_logger::init();
+    });
+
     let mut server = mariadb_proxy::server::Server::new(
         "0.0.0.0:3306".to_string(),
         DatabaseType::MariaDB,
@@ -48,6 +48,13 @@ async fn initialize() -> oneshot::Sender<()> {
         server.run(PassthroughHandler {}, rx).await;
     });
     tx
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct Payment {
+    customer_id: i32,
+    amount: i32,
+    account_name: Option<String>,
 }
 
 #[tokio::test]
