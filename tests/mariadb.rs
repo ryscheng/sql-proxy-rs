@@ -5,6 +5,7 @@ use env_logger;
 use futures::channel::oneshot;
 use mysql_async::prelude::*;
 use std::{error::Error, sync::Once};
+use tokio;
 
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
@@ -68,11 +69,11 @@ struct Payment {
 }
 
 #[tokio::test]
-async fn can_proxy_requests() -> Result<(), Box<dyn Error>> {
+async fn mariadb_can_proxy_requests() -> Result<(), Box<dyn Error>> {
     let kill_switch = initialize().await;
 
     debug!("SQL client to connect to proxy");
-    let database_uri = "mysql://root:devpassword@localhost:3306/testdb";
+    let database_uri = "mysql://root:testpassword@localhost:3306/testdb";
     let pool = mysql_async::Pool::new(database_uri);
     debug!("SQL client get connection");
     let conn = pool.get_conn().await?;

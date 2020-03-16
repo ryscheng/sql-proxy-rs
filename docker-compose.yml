@@ -10,8 +10,6 @@ services:
       - MYSQL_ROOT_PASSWORD=testpassword
       - MYSQL_USER=testuser
       - MYSQL_PASSWORD=testpassword
-    links:
-      - proxy # To run the client from here
 
   postgres-server:
     image: postgres
@@ -22,9 +20,7 @@ services:
     environment:
       - POSTGRES_DB=testdb
       - POSTGRES_USER=root
-      - POSTGRES_PASSWORD=devpassword
-    links:
-      - proxy # To run the client from here
+      - POSTGRES_PASSWORD=testpassword
 
   adminer:
     image: adminer

@@ -2,12 +2,14 @@
 extern crate log;
 
 use futures::channel::oneshot;
+use std::error::Error;
+use tokio;
+use tokio_postgres::NoTls;
+
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
-use std::error::Error;
-use tokio_postgres::NoTls;
 
 struct PassthroughHandler {}
 
@@ -57,19 +59,22 @@ async fn initialize() -> oneshot::Sender<()> {
 }
 
 #[tokio::test]
-async fn can_proxy_requests() -> Result<(), Box<dyn Error>> {
+async fn postgres_can_proxy_requests() -> Result<(), Box<dyn Error>> {
     let kill_switch = initialize().await;
 
+    debug!("SQL client to connect to proxy");
     let (client, connection) = tokio_postgres::connect(
-        "postgresql://postgres:devpassword@mariadb-proxy:5432/testdb",
+        "postgresql://root:testpassword@localhost:5432/testdb",
         NoTls,
     )
     .await?;
+
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
         }
     });
+    debug!("Initialized SQL client");
 
     client
         .batch_execute(
@@ -82,6 +87,7 @@ async fn can_proxy_requests() -> Result<(), Box<dyn Error>> {
     ",
         )
         .await?;
+    debug!("Created temporary table");
 
     client
         .execute(
@@ -96,8 +102,10 @@ async fn can_proxy_requests() -> Result<(), Box<dyn Error>> {
             &[&"Bob", &"Male"],
         )
         .await?;
+    debug!("Insert into payments");
 
     let rows = client.query("SELECT name, gender FROM person", &[]).await?;
+    debug!("Select from payments");
 
     // Assert data is correct
     assert_eq!(rows[0].get::<_, &str>(0), "Alice");
@@ -105,5 +113,7 @@ async fn can_proxy_requests() -> Result<(), Box<dyn Error>> {
     assert_eq!(rows[1].get::<_, &str>(0), "Bob");
     assert_eq!(rows[1].get::<_, &str>(1), "Male");
 
+    debug!("Killing server");
     kill_switch.send(()).unwrap();
+    Ok(())
 }
