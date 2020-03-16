@@ -5,7 +5,6 @@ use futures::{
     lock::Mutex,
     select,
     stream::StreamExt,
-    try_join
 };
 use tokio::net::{TcpListener, TcpStream};
 

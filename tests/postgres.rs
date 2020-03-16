@@ -2,11 +2,12 @@
 extern crate log;
 
 use futures::channel::oneshot;
-use postgres::{Client, NoTls};
+use tokio_postgres::NoTls;
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
+use std::error::Error;
 
 struct PassthroughHandler {}
 
@@ -48,10 +49,15 @@ async fn initialize() -> oneshot::Sender<()> {
 }
 
 #[tokio::test]
-async fn can_proxy_requests() {
+async fn can_proxy_requests() -> Result<(), Box<dyn Error>> {
     let kill_switch = initialize().await;
 
-    let mut client = Client::connect("postgresql://postgres:devpassword@mariadb-proxy:5432/testdb", NoTls).unwrap();
+    let (client, connection) = tokio_postgres::connect("postgresql://postgres:devpassword@mariadb-proxy:5432/testdb", NoTls).await?;
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
 
     client.batch_execute("
         CREATE TEMPORARY TABLE person (
@@ -59,19 +65,19 @@ async fn can_proxy_requests() {
             name    TEXT NOT NULL,
             gender  TEXT NOT NULL
         )
-    ").unwrap();
+    ").await?;
 
     client.execute(
         "INSERT INTO person (name, gender) VALUES ($1, $2)",
         &[&"Alice", &"Female"]
-    ).unwrap();
+    ).await?;
 
     client.execute(
         "INSERT INTO person (name, gender) VALUES ($1, $2)",
         &[&"Bob", &"Male"]
-    ).unwrap();
+    ).await?;
 
-    let rows = client.query("SELECT name, gender FROM person", &[]).unwrap();
+    let rows = client.query("SELECT name, gender FROM person", &[]).await?;
 
     // Assert data is correct
     assert_eq!(rows[0].get::<_, &str>(0), "Alice");
