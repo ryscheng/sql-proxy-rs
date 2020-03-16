@@ -11,3 +11,11 @@ mysql:
 
 tendermint:
 	docker exec -it tendermint-node /bin/bash
+
+mediawiki:
+	docker exec -it mediawiki /bin/bash
+
+# for importing data
+migrate:
+	docker exec -it mariadb-server /bin/bash -c "mysql --user=root --password=devpassword --database=mediawiki < /code/tables.sql"
+	docker exec -it mediawiki /bin/bash -c "php /var/www/html/maintenance/importDump.php data.xml"
