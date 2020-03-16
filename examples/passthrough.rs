@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate log;
 
+use futures::channel::oneshot;
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
@@ -52,5 +53,6 @@ async fn main() {
     .await;
 
     info!("Proxy listening on: {}", bind_addr);
-    server.run(PassthroughHandler {}).await;
+    let (_, rx) = oneshot::channel();
+    server.run(PassthroughHandler {}, rx).await;
 }

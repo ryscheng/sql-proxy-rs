@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate log;
 
+use futures::channel::oneshot;
 use std::collections::HashMap;
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
@@ -76,5 +77,6 @@ async fn main() {
     .await;
 
     info!("Proxy listening on: {}", bind_addr);
-    server.run(CounterHandler::new()).await;
+    let (_, rx) = oneshot::channel();
+    server.run(CounterHandler::new(), rx).await;
 }

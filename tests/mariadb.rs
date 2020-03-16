@@ -33,7 +33,7 @@ struct Payment {
     account_name: Option<String>,
 }
 
-async fn initialize() -> JoinHandle<()> {
+async fn initialize() -> oneshot::Sender<()> {
     let mut server = mariadb_proxy::server::Server::new(
         "0.0.0.0:3306".to_string(),
         DatabaseType::MariaDB,
@@ -42,16 +42,17 @@ async fn initialize() -> JoinHandle<()> {
     .await;
 
     // Spawn server on separate task
-    //let (tx, rx) = oneshot::channel();
+    let (tx, rx) = oneshot::channel();
     tokio::spawn(async move {
         info!("Proxy listening on: 0.0.0.0:3306");
-        server.run(PassthroughHandler {}).await;
-    })
+        server.run(PassthroughHandler {}, rx).await;
+    });
+    tx
 }
 
 #[tokio::test]
 async fn can_proxy_requests() -> Result<()> {
-    let kill = initialize().await;
+    let kill_switch = initialize().await;
 
     let database_uri = "mysql://root:devpassword@localhost:3306/testdb";
     let pool = Pool::new(database_uri).unwrap();
@@ -101,5 +102,6 @@ async fn can_proxy_requests() -> Result<()> {
     
     assert_eq!(final_block_height.unwrap(), initial_block_height.unwrap() + 2);
 
+    kill_switch.send(());
     Ok(())
 }

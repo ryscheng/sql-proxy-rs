@@ -2,6 +2,7 @@
 extern crate log;
 
 use env_logger;
+use futures::channel::oneshot;
 use postgres::{Client, NoTls};
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
@@ -31,7 +32,7 @@ struct Payment {
     account_name: Option<String>,
 }
 
-async fn initialize() -> JoinHandle<()> {
+async fn initialize() -> oneshot::Sender<()> {
     let mut server = mariadb_proxy::server::Server::new(
         "0.0.0.0:5432".to_string(),
         DatabaseType::PostgresSQL,
@@ -40,16 +41,17 @@ async fn initialize() -> JoinHandle<()> {
     .await;
 
     // Spawn server on separate task
-    //let (tx, rx) = oneshot::channel();
+    let (tx, rx) = oneshot::channel();
     tokio::spawn(async move {
         info!("Proxy listening on: 0.0.0.0:5432");
-        server.run(PassthroughHandler {}).await;
-    })
+        server.run(PassthroughHandler {}, rx).await;
+    });
+    tx
 }
 
 #[tokio::test]
 async fn can_proxy_requests() {
-    let kill = initialize().await;
+    let kill_switch = initialize().await;
 
     let mut client = Client::connect("postgresql://postgres:devpassword@mariadb-proxy:5432/testdb", NoTls).unwrap();
 
@@ -78,4 +80,6 @@ async fn can_proxy_requests() {
     assert_eq!(rows[0].get::<_, &str>(1), "Female");
     assert_eq!(rows[1].get::<_, &str>(0), "Bob");
     assert_eq!(rows[1].get::<_, &str>(1), "Male");
+
+    kill_switch.send(());
 }

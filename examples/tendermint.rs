@@ -3,6 +3,7 @@ extern crate log;
 
 use abci::*;
 use env_logger;
+use futures::channel::oneshot;
 use futures::executor::block_on;
 use hex;
 use http::uri::Uri;
@@ -433,9 +434,10 @@ async fn main() {
     )
     .await;
 
+    let (_, rx) = oneshot::channel(); // kill switch
     tokio::spawn(async move {
         info!("Proxy listening on: {}", bind_addr);
-        server.run(handler).await;
+        server.run(handler, rx).await;
     });
 
     let (client, connection) =

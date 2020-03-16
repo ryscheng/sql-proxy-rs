@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures::{
-    channel::oneshot::Receiver,
+    channel::oneshot,
     future::FutureExt, // for `.fuse()`
     lock::Mutex,
     select,
@@ -76,21 +76,35 @@ impl Server {
 
     }
 
-    pub async fn run<T: PacketHandler + Send + Sync + 'static>(&mut self, packet_handler: T) {
+    pub async fn run<T: PacketHandler + Send + Sync + 'static>(&mut self, packet_handler: T, kill_switch_receiver: oneshot::Receiver<()>) {
         let db_addr = self.db_addr.clone();
         let db_type = self.db_type;
         let packet_handler = Arc::new(Mutex::new(packet_handler));
-        let mut incoming = self.listener.incoming();
-        while let Some(conn) = incoming.next().await {
-            match conn {
-                Ok(mut client_socket) => {
-                    Server::create_pipes(db_addr.clone(), db_type, client_socket, packet_handler.clone());
+        let mut incoming = self.listener.incoming().fuse();
+        let mut kill_switch_receiver = kill_switch_receiver.fuse();
+        loop {
+        //while let Some(conn) = incoming.next().await {
+            select! {
+                some_conn = incoming.next() => {
+                    if let Some(conn) = some_conn {
+                        match conn {
+                            Ok(mut client_socket) => {
+                                Server::create_pipes(db_addr.clone(), db_type, client_socket, packet_handler.clone());
+                            },
+                            Err(err) => {
+                                // Handle error by printing to STDOUT.
+                                error!("accept error = {:?}", err);
+                            },
+                        };
+                    } else {
+                        debug!("Server.run() accept completed. no more incoming connections");
+                        break;
+                    }
                 },
-                Err(err) => {
-                    // Handle error by printing to STDOUT.
-                    error!("accept error = {:?}", err);
+                _ = kill_switch_receiver => {
+                    break
                 },
-            };
+            }
         } // end loop
         info!("Server run() complete");
     }
