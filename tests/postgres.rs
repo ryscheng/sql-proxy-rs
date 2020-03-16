@@ -11,7 +11,6 @@ struct Payment {
     account_name: Option<String>,
 }
 
-#[test]
 fn can_proxy_requests_to_tendermint() {
     let mut client = Client::connect("postgresql://postgres:devpassword@mariadb-proxy:5432/testdb", NoTls).unwrap();
 

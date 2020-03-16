@@ -1,25 +1,30 @@
 #[macro_use]
 extern crate log;
 
-use env_logger;
+use futures::channel::oneshot;
 use mysql::*;
 use mysql::prelude::*;
-use std::sync::Once;
+use tokio::task::JoinHandle;
 
-static INIT: Once = Once::new();
+use mariadb_proxy::{
+    packet::{DatabaseType, Packet},
+    packet_handler::PacketHandler,
+};
+
+struct PassthroughHandler {}
 
 #[async_trait::async_trait]
 impl PacketHandler for PassthroughHandler {
     async fn handle_request(&mut self, p: &Packet) -> Packet {
+        debug!("c=>s: {:?} packet: {} bytes", p.get_packet_type(), p.get_size());
         p.clone()
     }
 
     async fn handle_response(&mut self, p: &Packet) -> Packet {
+        debug!("c<=s: {:?} packet: {} bytes", p.get_packet_type(), p.get_size());
         p.clone()
     }
 }
-
-
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Payment {
@@ -28,24 +33,27 @@ struct Payment {
     account_name: Option<String>,
 }
 
-pub fn initialize() {
-    INIT.call_once(|| {
-        let mut server = mariadb_proxy::server::Server::new(
-            bind_addr.clone(),
-            db_type,
-            db_addr.clone(),
-        )
-        .await;
+async fn initialize() -> JoinHandle<()> {
+    let mut server = mariadb_proxy::server::Server::new(
+        "0.0.0.0:3306".to_string(),
+        DatabaseType::MariaDB,
+        "mariadb-server:3306".to_string(),
+    )
+    .await;
 
-        info!("Proxy listening on: {}", bind_addr);
+    // Spawn server on separate task
+    //let (tx, rx) = oneshot::channel();
+    tokio::spawn(async move {
+        info!("Proxy listening on: 0.0.0.0:3306");
         server.run(PassthroughHandler {}).await;
-
-    });
+    })
 }
 
-#[test]
-fn can_proxy_requests_to_tendermint() -> Result<()> {
-    let database_uri = "mysql://root:devpassword@mariadb-proxy:3306/testdb";
+#[tokio::test]
+async fn can_proxy_requests_to_tendermint() -> Result<()> {
+    let kill = initialize().await;
+
+    let database_uri = "mysql://root:devpassword@localhost:3306/testdb";
     let pool = Pool::new(database_uri).unwrap();
     let mut conn = pool.get_conn().unwrap();
     
