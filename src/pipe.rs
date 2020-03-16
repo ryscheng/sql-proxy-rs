@@ -1,3 +1,4 @@
+use byteorder::{BigEndian, ByteOrder};
 use futures::lock::Mutex;
 use std::{
     io::{Error, ErrorKind},
@@ -6,12 +7,13 @@ use std::{
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
 
 use crate::{
-    packet::Packet,
+    packet::{DatabaseType, Packet},
     packet_handler::{Direction, PacketHandler},
 };
 
 pub struct Pipe<T: AsyncReadExt, U: AsyncWriteExt> {
     name: String,
+    db_type: DatabaseType,
     packet_handler: Arc<Mutex<dyn PacketHandler + Send>>,
     direction: Direction,
     source: T,
@@ -21,6 +23,7 @@ pub struct Pipe<T: AsyncReadExt, U: AsyncWriteExt> {
 impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
     pub fn new(
         name: String,
+        db_type: DatabaseType,
         packet_handler: Arc<Mutex<dyn PacketHandler + Send>>,
         direction: Direction,
         reader: T,
@@ -28,6 +31,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
     ) -> Pipe<T, U> {
         Pipe {
             name,
+            db_type,
             packet_handler,
             direction,
             source: reader,
@@ -72,7 +76,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             packet_buf.extend_from_slice(&read_buf[0..n]);
 
             // Process all packets in packet_buf, put into write_buf
-            while let Some(packet) = get_packet(&mut packet_buf) {
+            while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
                 trace!("[{}:{:?}]: Processing packet", self.name, self.direction);
                 {
                     // Scope for self.packet_handler Mutex
@@ -95,29 +99,79 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 n
             );
         } // end loop
-    }
-}
+    } // end fn run
+} // end impl
 
-fn get_packet(packet_buf: &mut Vec<u8>) -> Option<Packet> {
-    // Check for header
-    if packet_buf.len() > 3 {
-        let l = parse_packet_length(packet_buf);
-        let s = 4 + l;
-        // Check for entire packet size
-        if packet_buf.len() >= s {
-            let p = Packet {
-                bytes: packet_buf.drain(0..s).collect(),
-            };
-            Some(p)
-        } else {
-            None
+fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet> {
+    match db_type {
+        DatabaseType::MariaDB => {
+            // Check for header
+            if packet_buf.len() > 3 {
+                let l: usize = (((packet_buf[2] as u32) << 16)
+                    | ((packet_buf[1] as u32) << 8)
+                    | packet_buf[0] as u32) as usize;
+                let s = 4 + l;
+                // Check for entire packet size
+                if packet_buf.len() >= s {
+                    let p = Packet::new(DatabaseType::MariaDB, packet_buf.drain(0..s).collect());
+                    Some(p)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
-    } else {
-        None
-    }
-}
+        DatabaseType::PostgresSQL => {
+            if packet_buf.len() > 5 {
+                let list = [
+                    'R', 'K', 'B', '2', '3', 'C', 'd', 'c', 'f', 'G', 'H', 'W', 'D', 'I', 'E', 'F',
+                    'V', 'p', 'v', 'n', 'N', 'A', 't', 'S', 'P', '1', 's', 'Q', 'Z', 'T', 'X',
+                ];
+                let id = packet_buf[0] as char;
 
-/// Parse the MySQL packet length (3 byte little-endian)
-fn parse_packet_length(header: &[u8]) -> usize {
-    (((header[2] as u32) << 16) | ((header[1] as u32) << 8) | header[0] as u32) as usize
+                if list.contains(&id) {
+                    let l = BigEndian::read_u32(&packet_buf[1..5]) as usize;
+                    let s = 1 + l;
+                    trace!(
+                        "get_packet(PostgresSQL): type={}, size={}, length={}",
+                        id,
+                        s,
+                        l
+                    );
+                    // Check for entire packet size
+                    if packet_buf.len() >= s {
+                        let p = Packet::new(
+                            DatabaseType::PostgresSQL,
+                            packet_buf.drain(0..s).collect(),
+                        );
+                        Some(p)
+                    } else {
+                        None
+                    }
+                } else {
+                    let l = BigEndian::read_u32(&packet_buf[0..4]) as usize;
+                    let s = l;
+                    trace!(
+                        "get_packet(PostgresSQL): firstbyte={:#04x}, size={}, length={}",
+                        packet_buf[0],
+                        s,
+                        l
+                    );
+                    // Check for entire packet size
+                    if packet_buf.len() >= s {
+                        let p = Packet::new(
+                            DatabaseType::PostgresSQL,
+                            packet_buf.drain(0..s).collect(),
+                        );
+                        Some(p)
+                    } else {
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
+    }
 }

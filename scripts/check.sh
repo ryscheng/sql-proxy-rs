@@ -6,6 +6,6 @@ rustup toolchain install nightly
 rustup component add rustfmt --toolchain nightly
 cargo +nightly fmt
 
-rustup component add clippy --toolchain nightly
-cargo +nightly clippy
+rustup component add clippy
+cargo clippy
 
