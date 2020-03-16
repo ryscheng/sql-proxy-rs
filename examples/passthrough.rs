@@ -6,7 +6,7 @@ use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
-use std::io::{self, BufRead};
+use async_std::io;
 
 struct PassthroughHandler {}
 
@@ -61,7 +61,10 @@ async fn main() {
 
     // Run until use hits enter
     let stdin = io::stdin();
-    let mut iterator = stdin.lock().lines();
-    let _ = iterator.next().unwrap().unwrap();
-    tx.send(());
+    let mut line = String::new();
+    match stdin.read_line(&mut line).await {
+        Ok(_) => tx.send(()).unwrap(),
+        Err(_) => tx.send(()).unwrap(),
+    };
+    info!("...exiting");
 }

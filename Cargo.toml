@@ -13,6 +13,7 @@ env_logger = "0.7"
 futures = "0.3"
 futures-util = "0.3"
 log = "0.4"
+async-std = "1.5"
 tokio = { version = "0.2", features = ["full"] }
 
 [dev-dependencies]

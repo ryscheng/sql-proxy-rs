@@ -1,11 +1,11 @@
 #[macro_use]
 extern crate log;
 
+use env_logger;
 use futures::channel::oneshot;
 use mysql::*;
 use mysql::prelude::*;
 use std::sync::Once;
-use tokio::task::JoinHandle;
 
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
@@ -109,6 +109,6 @@ async fn can_proxy_requests() -> Result<()> {
     
     assert_eq!(final_block_height.unwrap(), initial_block_height.unwrap() + 2);
 
-    kill_switch.send(());
+    kill_switch.send(()).unwrap();
     Ok(())
 }

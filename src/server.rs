@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::rc::Rc;
 use futures::{
     channel::oneshot,
     future::FutureExt, // for `.fuse()`
@@ -39,8 +38,8 @@ impl Server {
             Ok(addr) => addr.to_string(),
             Err(_e) => String::from("Unknown"),
         };
-        debug!("Accepted connection from {}", client_addr);
         tokio::spawn(async move {
+            debug!("Server.create_pipes: Spawning new task to manage connection from {}", client_addr);
             let (client_reader, client_writer) = client_socket.split();
             let mut server_socket = TcpStream::connect(db_addr.clone())
                 .await
@@ -64,6 +63,7 @@ impl Server {
                 server_reader,
                 client_writer,
             );
+            trace!("Server.create_pipes: starting forward/backwards pipes");
             select! {
                 _ = forward_pipe.run().fuse() => {
                     trace!("Pipe closed via forward pipe");
@@ -81,6 +81,7 @@ impl Server {
     }
 
     pub async fn run<T: PacketHandler + Send + Sync + 'static>(&mut self, packet_handler: T, kill_switch_receiver: oneshot::Receiver<()>) {
+        trace!("Server.run(): enter");
         let db_addr = self.db_addr.clone();
         let db_type = self.db_type;
         let packet_handler = Arc::new(Mutex::new(packet_handler));
@@ -88,18 +89,21 @@ impl Server {
         let mut kill_switch_receiver = kill_switch_receiver.fuse();
         loop {
         //while let Some(conn) = incoming.next().await {
+            trace!("Server.run(): loop starts");
             select! {
                 some_conn = incoming.next() => {
+                    trace!("Server.run(): new incoming connection");
                     if let Some(conn) = some_conn {
                         match conn {
                             Ok(mut client_socket) => {
+                                trace!("Server.run(): got the client_socket");
                                 let (tx, rx) = oneshot::channel();
                                 self.kill_switches.push(tx);
-                                Server::create_pipes(db_addr.clone(), db_type, client_socket, packet_handler.clone(), rx);
+                                Server::create_pipes(db_addr.clone(), db_type, client_socket, packet_handler.clone(), rx).await;
                             },
                             Err(err) => {
                                 // Handle error by printing to STDOUT.
-                                error!("accept error = {:?}", err);
+                                error!("Server.run() accept error = {:?}", err);
                             },
                         };
                     } else {
@@ -108,15 +112,18 @@ impl Server {
                     }
                 },
                 _ = kill_switch_receiver => {
-                    info!("Received a kill switch at the server");
+                    info!("Server.run(): Received a kill switch at the server");
                     // Kill all pipes
+                    let mut i = 0;
                     while let Some(s) = self.kill_switches.pop() {
-                        s.send(());
+                        let _ = s.send(());
+                        i += 1;
                     }
-                    break
+                    debug!("Server.run(): killed {} pipes", i);
+                    break;
                 },
             }
         } // end loop
-        info!("Server run() complete");
+        info!("Server.run() complete");
     }
 }

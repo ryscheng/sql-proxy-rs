@@ -1,14 +1,12 @@
 #[macro_use]
 extern crate log;
 
-use env_logger;
 use futures::channel::oneshot;
 use postgres::{Client, NoTls};
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
-use tokio::task::JoinHandle;
 
 struct PassthroughHandler {}
 
@@ -81,5 +79,5 @@ async fn can_proxy_requests() {
     assert_eq!(rows[1].get::<_, &str>(0), "Bob");
     assert_eq!(rows[1].get::<_, &str>(1), "Male");
 
-    kill_switch.send(());
+    kill_switch.send(()).unwrap();
 }
