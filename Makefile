@@ -1,7 +1,10 @@
-.PHONY: shell psql mysql
+.PHONY: shell test psql mysql
 
 shell:
 	docker exec -it proxy /bin/bash
+
+test:
+	docker exec -it proxy cargo test
 
 psql:
 	docker exec -it postgres-server psql "postgresql://root:testpassword@proxy:5432/testdb?sslmode=disable"
