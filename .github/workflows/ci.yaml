@@ -36,7 +36,7 @@ jobs:
         run: docker ps -a
 
       - name: Run cargo test
-        run: make test
+        run: docker exec proxy cargo test
 
   lints:
     name: Lint
