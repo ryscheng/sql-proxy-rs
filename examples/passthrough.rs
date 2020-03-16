@@ -1,12 +1,12 @@
 #[macro_use]
 extern crate log;
 
+use async_std::io;
 use futures::channel::oneshot;
 use mariadb_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
-use async_std::io;
 
 struct PassthroughHandler {}
 
