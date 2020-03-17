@@ -67,3 +67,40 @@ services:
     volumes:
       - /var/www/html/images
       - ./docker/mediawiki/LocalSettings.php:/var/www/html/LocalSettings.php
+
+  redis:
+    image: 'bitnami/redis:5.0'
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+
+  discourse:
+    image: 'bitnami/discourse:2'
+    ports:
+      - '80:3000'
+    depends_on:
+      - postgres-server
+      - redis
+    environment:
+      - POSTGRESQL_HOST=postgres-server
+      - POSTGRESQL_ROOT_USER=root
+      - POSTGRESQL_ROOT_PASSWORD=testpassword
+      - POSTGRESQL_CLIENT_CREATE_DATABASE_NAME=bitnami_application
+      - POSTGRESQL_CLIENT_CREATE_DATABASE_USERNAME=root
+      - POSTGRESQL_CLIENT_CREATE_DATABASE_PASSWORD=testpassword
+      - DISCOURSE_POSTGRESQL_NAME=bitnami_application
+      - DISCOURSE_POSTGRESQL_USERNAME=root
+      - DISCOURSE_POSTGRESQL_PASSWORD=testpassword
+      - DISCOURSE_HOSTNAME=localhost
+      
+  sidekiq:
+    image: 'bitnami/discourse:2'
+    depends_on:
+      - discourse
+    command: 'nami start --foreground discourse-sidekiq'
+    environment:
+      - DISCOURSE_POSTGRESQL_NAME=bitnami_application
+      - DISCOURSE_POSTGRESQL_USERNAME=root
+      - DISCOURSE_POSTGRESQL_PASSWORD=testpassword
+      - DISCOURSE_HOST=discourse
+      - DISCOURSE_PORT=3000
+      - DISCOURSE_HOSTNAME=localhost
