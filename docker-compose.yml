@@ -5,6 +5,8 @@ services:
     image: mariadb
     container_name: mariadb-server
     restart: always
+    volumes:
+      - ./docker/mariadb-server:/docker
     environment:
       - MYSQL_DATABASE=testdb
       - MYSQL_ROOT_PASSWORD=testpassword
@@ -52,3 +54,16 @@ services:
       - mariadb-server
       - postgres-server
       - proxy
+
+  mediawiki:
+    image: mediawiki
+    container_name: mediawiki
+    restart: always
+    ports:
+      - 8888:80
+    links:
+      - proxy
+      - mariadb-server
+    volumes:
+      - /var/www/html/images
+      - ./docker/mediawiki/LocalSettings.php:/var/www/html/LocalSettings.php

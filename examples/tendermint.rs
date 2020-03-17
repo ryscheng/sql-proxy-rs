@@ -395,7 +395,7 @@ async fn main() {
     let mariadb_bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:3306".to_string());
     let mariadb_db_uri_str = args
         .next()
-        .unwrap_or_else(|| "mysql://root:devpassword@mariadb-server:3306/testdb".to_string());
+        .unwrap_or_else(|| "mysql://root:testpassword@mariadb-server:3306/testdb".to_string());
 
     let mariadb_db_uri = mariadb_db_uri_str.parse::<Uri>().unwrap();
     let mariadb_db_addr = mariadb_db_uri.host().unwrap().to_string()
@@ -405,7 +405,7 @@ async fn main() {
     // postgres
     let postgres_bind_addr = args.next().unwrap_or_else(|| "0.0.0.0:5432".to_string());
     let postgres_db_uri_str = args.next().unwrap_or_else(|| {
-        "postgresql://postgres:devpassword@postgres-server:5432/testdb".to_string()
+        "postgresql://root:testpassword@postgres-server:5432/testdb?sslmode=disable".to_string()
     });
 
     let postgres_db_uri = postgres_db_uri_str.parse::<Uri>().unwrap();
@@ -413,8 +413,8 @@ async fn main() {
         + ":"
         + &postgres_db_uri.port_u16().unwrap().to_string();
 
-    let db_type = DatabaseType::PostgresSQL;
-    // let db_type = DatabaseType::MariaDB;
+    // let db_type = DatabaseType::PostgresSQL;
+    let db_type = DatabaseType::MariaDB;
     let bind_addr = if db_type == DatabaseType::MariaDB {
         mariadb_bind_addr
     } else {
@@ -444,7 +444,7 @@ async fn main() {
     });
 
     let (client, connection) = connect(
-        "postgresql://postgres:devpassword@postgres-server:5432/testdb",
+        "postgresql://root:testpassword@postgres-server:5432/testdb?sslmode=disable",
         NoTls,
     )
     .await

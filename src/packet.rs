@@ -109,6 +109,12 @@ impl Packet {
                 0x1d => Ok(PacketType::ComDaemon),
                 0x1e => Ok(PacketType::ComBinlogDumpGtid),
                 0x1f => Ok(PacketType::ComResetConnection),
+
+                0x8f => Ok(PacketType::ComEof), // TODO: fix
+                0x8c => Ok(PacketType::ComEof), // TODO: fix
+                0xfc => Ok(PacketType::ComEof), // TODO: fix
+                0xfd => Ok(PacketType::ComEof), // TODO: fix
+
                 0xfe => Ok(PacketType::ComEof),
                 0xff => Ok(PacketType::ComErr),
                 _ => Err(Error::new(

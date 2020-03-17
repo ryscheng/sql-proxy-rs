@@ -15,7 +15,6 @@ tendermint:
 mediawiki:
 	docker exec -it mediawiki /bin/bash
 
-# for importing data
-migrate:
-	docker exec -it mariadb-server /bin/bash -c "mysql --user=root --password=devpassword --database=mediawiki < /code/tables.sql"
-	docker exec -it mediawiki /bin/bash -c "php /var/www/html/maintenance/importDump.php data.xml"
+mediawiki-db:
+	docker exec -it mariadb-server /bin/bash -c "mysql --user=root --password=testpassword --database=testdb < /docker/tables.sql"
+	# docker exec -it mediawiki /bin/bash -c "php /var/www/html/maintenance/importDump.php data.xml"
