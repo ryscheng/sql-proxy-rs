@@ -8,7 +8,10 @@ services:
     volumes:
       - "./:/code"
     working_dir: /code
-    links:
+    networks:
+      - sqlproxy
+      - sqlproxybackend
+    depends_on:
       - mariadb-server
       - postgres-server
 
@@ -18,6 +21,8 @@ services:
     restart: always
     volumes:
       - ./docker/mariadb-server:/docker
+    networks:
+      - sqlproxybackend
     environment:
       - MYSQL_DATABASE=testdb
       - MYSQL_ROOT_PASSWORD=testpassword
@@ -28,6 +33,8 @@ services:
     image: postgres
     container_name: postgres-server
     restart: always
+    networks:
+      - sqlproxybackend
     environment:
       - POSTGRES_DB=testdb
       - POSTGRES_USER=root
@@ -37,6 +44,8 @@ services:
     image: adminer
     container_name: adminer 
     restart: always
+    networks:
+      - sqlproxybackend
     ports:
       - 8080:8080
     links:
@@ -44,4 +53,8 @@ services:
       - postgres-server
       - proxy
 
-
+networks:
+  sqlproxy:
+    driver: bridge
+  sqlproxybackend:
+    driver: bridge
