@@ -29,3 +29,8 @@ rand = "0.7"
 sodiumoxide = "0.2"
 sqlparser = "0.5"
 urlencoding = "1.0"
+
+[workspace]
+members = [
+  "autodapp",
+]
