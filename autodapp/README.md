@@ -13,6 +13,7 @@ $ make shell
 $RUST_LOG=trace cargo run --example counter -- 0.0.0.0:5432 postgres-server::5432 postgres
 
 # Shell 3
+$ cd autodapp/
 $ make discourse
 ```
 
