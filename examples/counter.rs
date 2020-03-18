@@ -27,6 +27,11 @@ impl PacketHandler for CounterHandler {
     async fn handle_request(&mut self, p: &Packet) -> Packet {
         // Print out the packet
         //debug!("[{}]", String::from_utf8_lossy(&p.bytes));
+        debug!(
+            "c<=s: {:?} packet: {} bytes",
+            p.get_packet_type(),
+            p.get_size()
+        );
 
         match p.get_query() {
             Ok(sql) => {
@@ -44,6 +49,12 @@ impl PacketHandler for CounterHandler {
     }
 
     async fn handle_response(&mut self, p: &Packet) -> Packet {
+        debug!(
+            "c<=s: {:?} packet: {} bytes",
+            p.get_packet_type(),
+            p.get_size()
+        );
+        
         p.clone()
     }
 }
