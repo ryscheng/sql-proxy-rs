@@ -33,8 +33,8 @@ This example just silently forwards packets back and forth
 ```bash
 $ RUST_LOG=info cargo run --example passthrough -- BIND_ADDR DB_ADDR [mariadb/postgres]
 # For example:
-$ RUST_LOG=info cargo run --example passthrough -- 0.0.0.0:3306 mariadb-server::3306 mariadb
-$ RUST_LOG=info cargo run --example passthrough -- 0.0.0.0:5432 postgres-server::5432 postgres
+$ RUST_LOG=info cargo run --example passthrough -- 0.0.0.0:3306 mariadb-server:3306 mariadb
+$ RUST_LOG=info cargo run --example passthrough -- 0.0.0.0:5432 postgres-server:5432 postgres
 ```
 
 ## Counter proxy
@@ -44,8 +44,8 @@ This example is the same as passthrough proxy, except it also logs any queries c
 ```bash
 $ RUST_LOG=info cargo run --example counter -- BIND_ADDR DB_ADDR [mariadb/postgres]
 # For example:
-$ RUST_LOG=info cargo run --example counter -- 0.0.0.0:3306 mariadb-server::3306 mariadb
-$ RUST_LOG=info cargo run --example counter -- 0.0.0.0:5432 postgres-server::5432 postgres
+$ RUST_LOG=info cargo run --example counter -- 0.0.0.0:3306 mariadb-server:3306 mariadb
+$ RUST_LOG=info cargo run --example counter -- 0.0.0.0:5432 postgres-server:5432 postgres
 ```
 
 ## Tendermint proxy
@@ -64,4 +64,16 @@ you can use the following script to connect to your proxy and interactively issu
 $ make mysql    # client to a MariaDB proxy
 OR 
 $ make psql     # client to a Postgres proxy
+```
+
+# Demos
+
+To run the demos we've implemented (Discourse and Mediawiki),
+you can use the following docker-compose commands:
+
+```bash
+$ make discourse    # discourse demo (based on postgres)
+OR
+$ make mediawiki    # mediawiki demo (based on mariadb)
+$ make mediawiki-db # migrate db
 ```

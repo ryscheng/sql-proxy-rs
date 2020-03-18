@@ -6,7 +6,7 @@ services:
     container_name: mariadb-server
     restart: always
     volumes:
-      - ./docker/mariadb-server:/docker
+      - ./tables.sql:/docker/tables.sql
     environment:
       - MYSQL_DATABASE=testdb
       - MYSQL_ROOT_PASSWORD=testpassword
@@ -36,9 +36,9 @@ services:
   proxy:
     image: rust
     container_name: proxy
-    command: /bin/bash -c "while true; do sleep 200; echo 'TERMINAL is up'; done"
+    command: /bin/bash -c "RUST_LOG=trace cargo run --example passthrough -- 0.0.0.0:3306 mariadb-server:3306 mariadb"
     volumes:
-      - "./:/code"
+      - "../../:/code"
     working_dir: /code
     links:
       - mariadb-server
@@ -54,3 +54,21 @@ services:
       - mariadb-server
       - postgres-server
       - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-v", "telnet://proxy:26658"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  mediawiki:
+    image: mediawiki
+    container_name: mediawiki
+    restart: always
+    ports:
+      - 80:80
+    links:
+      - proxy
+      - mariadb-server
+    volumes:
+      - /var/www/html/images
+      - ./LocalSettings.php:/var/www/html/LocalSettings.php

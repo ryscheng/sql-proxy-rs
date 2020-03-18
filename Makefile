@@ -12,9 +12,13 @@ mysql:
 tendermint:
 	docker exec -it tendermint-node /bin/bash
 
-mediawiki:
-	docker exec -it mediawiki /bin/bash
+discourse:
+	docker-compose -f demo/discourse/docker-compose.yml up
 
+mediawiki:
+	docker-compose -f demo/mediawiki/docker-compose.yml up
+	
 mediawiki-db:
 	docker exec -it mariadb-server /bin/bash -c "mysql --user=root --password=testpassword --database=testdb < /docker/tables.sql"
 	# docker exec -it mediawiki /bin/bash -c "php /var/www/html/maintenance/importDump.php data.xml"
+

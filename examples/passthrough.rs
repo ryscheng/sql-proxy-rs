@@ -61,10 +61,10 @@ async fn main() {
         mariadb_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
 
     let (tx, rx) = oneshot::channel(); // kill switch
-    tokio::spawn(async move {
+    // tokio::spawn(async move { // tokio spawn exits docker container, disable for now
         info!("Proxy listening on: {}", bind_addr);
         server.run(PassthroughHandler {}, rx).await;
-    });
+    // });
 
     // Run until use hits enter
     let stdin = io::stdin();
