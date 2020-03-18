@@ -50,14 +50,6 @@ $ RUST_LOG=info cargo run --example counter -- 0.0.0.0:3306 mariadb-server:3306 
 $ RUST_LOG=info cargo run --example counter -- 0.0.0.0:5432 postgres-server:5432 postgres
 ```
 
-## Tendermint proxy
-
-This example forwards all queries to a Tendermint network, replicating the query
-
-```bash
-$ RUST_LOG=info cargo run --example tendermint
-```
-
 # Running a SQL client
 Assuming you used the previous setup scripts to run a proxy,
 you can use the following script to connect to your proxy and interactively issue SQL commands
@@ -68,14 +60,3 @@ OR
 $ make psql     # client to a Postgres proxy
 ```
 
-# Demos
-
-To run the demos we've implemented (Discourse and Mediawiki),
-you can use the following docker-compose commands:
-
-```bash
-$ make discourse    # discourse demo (based on postgres)
-OR
-$ make mediawiki    # mediawiki demo (based on mariadb)
-$ make mediawiki-db # migrate db
-```
