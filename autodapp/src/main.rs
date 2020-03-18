@@ -7,7 +7,7 @@ use futures::{channel::oneshot, executor::block_on};
 use hex;
 use http::uri::Uri;
 use hyper;
-use mariadb_proxy::{
+use sql_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
@@ -435,7 +435,7 @@ async fn main() {
     let handler = ProxyHandler::new(node_id.clone(), db_type, tendermint_addr);
 
     let mut server =
-        mariadb_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
+        sql_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
 
     let (_, rx) = oneshot::channel(); // kill switch
     tokio::spawn(async move {
