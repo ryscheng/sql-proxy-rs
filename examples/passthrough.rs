@@ -3,7 +3,7 @@ extern crate log;
 
 use async_std::io;
 use futures::channel::oneshot;
-use mariadb_proxy::{
+use sql_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
@@ -58,7 +58,7 @@ async fn main() {
     }
 
     let mut server =
-        mariadb_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
+        sql_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
 
     let (tx, rx) = oneshot::channel(); // kill switch
     // tokio::spawn(async move { // tokio spawn exits docker container, disable for now

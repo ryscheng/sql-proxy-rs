@@ -7,7 +7,7 @@ use mysql_async::prelude::*;
 use std::{error::Error, sync::Once};
 use tokio;
 
-use mariadb_proxy::{
+use sql_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
@@ -43,7 +43,7 @@ async fn initialize() -> oneshot::Sender<()> {
     });
 
     debug!("Constructing server");
-    let mut server = mariadb_proxy::server::Server::new(
+    let mut server = sql_proxy::server::Server::new(
         "0.0.0.0:3306".to_string(),
         DatabaseType::MariaDB,
         "mariadb-server:3306".to_string(),

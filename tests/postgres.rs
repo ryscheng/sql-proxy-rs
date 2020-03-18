@@ -6,7 +6,7 @@ use std::{error::Error, sync::Once};
 use tokio;
 use tokio_postgres::{NoTls, SimpleQueryMessage};
 
-use mariadb_proxy::{
+use sql_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
@@ -49,7 +49,7 @@ async fn initialize() -> oneshot::Sender<()> {
     });
 
     debug!("Constructing server");
-    let mut server = mariadb_proxy::server::Server::new(
+    let mut server = sql_proxy::server::Server::new(
         "0.0.0.0:5432".to_string(),
         DatabaseType::PostgresSQL,
         "postgres-server:5432".to_string(),
