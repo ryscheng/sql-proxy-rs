@@ -7,13 +7,13 @@ use futures::{channel::oneshot, executor::block_on};
 use hex;
 use http::uri::Uri;
 use hyper;
+use mysql::{from_row, from_value, prelude::*, Pool, TxOpts, Value};
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use sodiumoxide::crypto::hash;
 use sql_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
-use mysql::{from_row, from_value, prelude::*, Pool, TxOpts, Value};
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use sodiumoxide::crypto::hash;
 use sqlparser::{dialect::GenericDialect, parser::Parser};
 use std::io::{Error, ErrorKind};
 use tokio;

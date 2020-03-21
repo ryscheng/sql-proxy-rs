@@ -5,9 +5,9 @@ services:
     image: rust
     container_name: proxy
     command: /bin/bash -c "while true; do sleep 200; echo 'TERMINAL is up'; done"
+    working_dir: /code
     volumes:
       - "./:/code"
-    working_dir: /code
     networks:
       - sqlproxy
       - sqlproxybackend
@@ -19,8 +19,6 @@ services:
     image: mariadb
     container_name: mariadb-server
     restart: always
-    volumes:
-      - ./docker/mariadb-server:/docker
     networks:
       - sqlproxybackend
     environment:
@@ -48,7 +46,7 @@ services:
       - sqlproxybackend
     ports:
       - 8080:8080
-    links:
+    depends_on:
       - mariadb-server
       - postgres-server
       - proxy

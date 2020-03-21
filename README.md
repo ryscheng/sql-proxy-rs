@@ -33,7 +33,7 @@ $ bash scripts/check.sh
 The script will run `rustfmt`, which automatically rewrites files to match the formatting rules.
 The script also runs `clippy`, which will only output errors that need to be addressed in order to pass CI
 
-### Integration tests 
+### Integration tests
 
 We currently have integration tests that test an end-to-end passthrough proxy.
 Run the following in the interactive shell (described above)

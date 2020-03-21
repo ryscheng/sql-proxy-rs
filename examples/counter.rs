@@ -54,7 +54,7 @@ impl PacketHandler for CounterHandler {
             p.get_packet_type(),
             p.get_size()
         );
-        
+
         p.clone()
     }
 }
