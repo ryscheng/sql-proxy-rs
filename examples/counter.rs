@@ -3,7 +3,7 @@ extern crate log;
 
 use async_std::io;
 use futures::channel::oneshot;
-use mariadb_proxy::{
+use sql_proxy::{
     packet::{DatabaseType, Packet},
     packet_handler::PacketHandler,
 };
@@ -27,6 +27,11 @@ impl PacketHandler for CounterHandler {
     async fn handle_request(&mut self, p: &Packet) -> Packet {
         // Print out the packet
         //debug!("[{}]", String::from_utf8_lossy(&p.bytes));
+        debug!(
+            "c<=s: {:?} packet: {} bytes",
+            p.get_packet_type(),
+            p.get_size()
+        );
 
         match p.get_query() {
             Ok(sql) => {
@@ -44,6 +49,12 @@ impl PacketHandler for CounterHandler {
     }
 
     async fn handle_response(&mut self, p: &Packet) -> Packet {
+        debug!(
+            "c<=s: {:?} packet: {} bytes",
+            p.get_packet_type(),
+            p.get_size()
+        );
+
         p.clone()
     }
 }
@@ -73,7 +84,7 @@ async fn main() {
     }
 
     let mut server =
-        mariadb_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
+        sql_proxy::server::Server::new(bind_addr.clone(), db_type, db_addr.clone()).await;
 
     info!("Proxy listening on: {}", bind_addr);
     let (tx, rx) = oneshot::channel(); // kill switch
