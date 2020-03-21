@@ -13,13 +13,27 @@ You'll need an instance of either Postgres or MariaDB running. If you have Docke
 $ docker-compose up
 ```
 
-To open an interactive shell into a Rust development container on the same network:
+To attach an interactive shell into the Rust development container that was launched from Docker compose.
+You can attach as many shells as you'd like to run different things in the same container
 
 ``` bash
 $ make shell
 ```
 
 ## Running tests
+
+### Lint
+
+From the interactive shell above, run
+
+```bash
+$ bash scripts/check.sh
+```
+
+The script will run `rustfmt`, which automatically rewrites files to match the formatting rules.
+The script also runs `clippy`, which will only output errors that need to be addressed in order to pass CI
+
+### Integration tests 
 
 We currently have integration tests that test an end-to-end passthrough proxy.
 Run the following in the interactive shell (described above)
