@@ -106,7 +106,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 // TODO: support SSL. For now, respond that we don't support SSL
                 // https://www.postgresql.org/docs/12/protocol-flow.html#id-1.10.5.7.11
                 if let Ok(PacketType::SSLRequest) = packet.get_packet_type() {
-                    self.debug("Got SSLRequest, responding no thanks");
+                    self.debug("Got SSLRequest, responding no thanks".to_string());
                     if let Err(_e) = other_pipe_sender
                         .send(Packet::new(self.db_type, String::from("N").into_bytes()))
                         .await
