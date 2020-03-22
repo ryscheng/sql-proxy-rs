@@ -3,6 +3,7 @@ use futures::{
     channel::mpsc::{Sender, Receiver},
     lock::Mutex,
     select,
+    sink::SinkExt,
     FutureExt,
     StreamExt,
 };
@@ -17,7 +18,7 @@ use std::{
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
 
 use crate::{
-    packet::{DatabaseType, Packet},
+    packet::{DatabaseType, Packet, PacketType},
     packet_handler::{Direction, PacketHandler},
 };
 
@@ -49,7 +50,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         }
     }
 
-    pub async fn run(&mut self, other_pipe_sender: Sender<Packet>, other_pipe_receiver: Receiver<Packet>) -> Result<()> {
+    pub async fn run(&mut self, mut other_pipe_sender: Sender<Packet>, other_pipe_receiver: Receiver<Packet>) -> Result<()> {
         trace!("[{}]: Running {:?} pipe loop...", self.name, self.direction);
         //let source = Arc::get_mut(&mut self.source).unwrap();
         //let sink = Arc::get_mut(&mut self.sink).unwrap();
@@ -63,7 +64,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 // Read from the source to read_buf, append to packet_buf
                 read_result = self.source.read(&mut read_buf[..]).fuse() => {
                     //let n = self.source.read(&mut read_buf[..]).await?;
-                    self.process_read_buf(read_result, &read_buf, &mut packet_buf, &mut write_buf).await?;
+                    self.process_read_buf(read_result, &read_buf, &mut packet_buf, &mut write_buf, &mut other_pipe_sender).await?;
                 },
                 // Support short-circuit
                 (packet, recv) = other_pipe_receiver => {
@@ -71,7 +72,6 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                     other_pipe_receiver = recv.into_future().fuse();
                 },
             } // end select!
-            
 
             // Write all to sink
             let n = self.sink.write(&write_buf[..]).await?;
@@ -80,7 +80,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         } // end loop
     } // end fn run
 
-    async fn process_read_buf(&self, read_result: Result<usize>, read_buf: &Vec<u8>, mut packet_buf: &mut Vec<u8>, write_buf: &mut Vec<u8>) -> Result<()> {
+    async fn process_read_buf(&self, read_result: Result<usize>, read_buf: &Vec<u8>, mut packet_buf: &mut Vec<u8>, write_buf: &mut Vec<u8>, other_pipe_sender: &mut Sender<Packet>) -> Result<()> {
         if let Ok(n) = read_result {
             if n == 0 {
                 let e = self.create_error(format!("Read {} bytes, closing pipe.", n));
@@ -93,13 +93,22 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             // Process all packets in packet_buf, put into write_buf
             while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
                 self.trace("Processing packet".to_string());
-                {
-                    // Scope for self.packet_handler Mutex
-                    let mut h = self.packet_handler.lock().await;
-                    let transformed_packet: Packet = match self.direction {
-                        Direction::Forward => h.handle_request(&packet).await,
-                        Direction::Backward => h.handle_response(&packet).await,
-                    };
+                // TODO: support SSL. For now, respond that we don't support SSL
+                // https://www.postgresql.org/docs/12/protocol-flow.html#id-1.10.5.7.11
+                if let Ok(PacketType::SSLRequest) = packet.get_packet_type() {
+                    if let Err(_e) = other_pipe_sender.send(Packet::new(self.db_type, String::from("N").into_bytes())).await {
+                        return Err(self.create_error("Error sending SSL response of no".to_string()));
+                    }
+                } else {
+                    let transformed_packet: Packet;
+                    {
+                        // Scope for self.packet_handler Mutex
+                        let mut h = self.packet_handler.lock().await;
+                        transformed_packet = match self.direction {
+                            Direction::Forward => h.handle_request(&packet).await,
+                            Direction::Backward => h.handle_response(&packet).await,
+                        };
+                    }
                     write_buf.extend_from_slice(&transformed_packet.bytes);
                 }
             } // end while
