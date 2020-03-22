@@ -59,8 +59,6 @@ impl Server {
             // Create channels to short-circuit at the proxy
             // - tx: use to send directly to other's sink
             // - rx: receive and directly dump into sink
-            let (fb_tx, fb_rx) = mpsc::channel::<Packet>(128);
-            let (bf_tx, bf_rx) = mpsc::channel::<Packet>(128);
             let mut forward_pipe = Pipe::new(
                 client_addr.clone(),
                 db_type,
@@ -68,8 +66,6 @@ impl Server {
                 Direction::Forward,
                 client_reader,
                 server_writer,
-                fb_tx,
-                bf_rx,
             );
             let mut backward_pipe = Pipe::new(
                 client_addr.clone(),
@@ -78,18 +74,19 @@ impl Server {
                 Direction::Backward,
                 server_reader,
                 client_writer,
-                bf_tx,
-                fb_rx,
             );
+
+            let (fb_tx, fb_rx) = mpsc::channel::<Packet>(128);
+            let (bf_tx, bf_rx) = mpsc::channel::<Packet>(128);
             trace!("Server.create_pipes: starting forward/backwards pipes");
             // select! will continuously run all futures until one returns
             // - pipes are infinite loops, and never expect to exit unless error
             // - any return will close this connection
             select! {
-                _ = forward_pipe.run().fuse() => {
+                _ = forward_pipe.run(fb_tx, bf_rx).fuse() => {
                     trace!("Pipe closed via forward pipe");
                 },
-                _ = backward_pipe.run().fuse() => {
+                _ = backward_pipe.run(bf_tx, fb_rx).fuse() => {
                     trace!("Pipe closed via backward pipe");
                 },
                 _ = kill_switch_receiver.fuse() => {

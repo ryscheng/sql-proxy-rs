@@ -1,8 +1,15 @@
 use byteorder::{BigEndian, ByteOrder};
 use futures::{
-    lock::Mutex,
     channel::mpsc::{Sender, Receiver},
+    lock::Mutex,
+    select,
+    FutureExt,
+    StreamExt,
 };
+//use futures_util::{
+//    future::FutureExt,
+//    stream::StreamExt,
+//};
 use std::{
     io::{Error, ErrorKind},
     sync::Arc,
@@ -21,8 +28,6 @@ pub struct Pipe<T: AsyncReadExt, U: AsyncWriteExt> {
     direction: Direction,
     source: T,
     sink: U,
-    other_pipe_sender: Sender<Packet>,
-    other_pipe_receiver: Receiver<Packet>,
 }
 
 impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
@@ -33,8 +38,6 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         direction: Direction,
         reader: T,
         writer: U,
-        other_pipe_sender: Sender<Packet>,
-        other_pipe_receiver: Receiver<Packet>,
     ) -> Pipe<T, U> {
         Pipe {
             name,
@@ -43,60 +46,93 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             direction,
             source: reader,
             sink: writer,
-            other_pipe_sender,
-            other_pipe_receiver,
         }
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self, other_pipe_sender: Sender<Packet>, other_pipe_receiver: Receiver<Packet>) -> Result<()> {
         trace!("[{}]: Running {:?} pipe loop...", self.name, self.direction);
         //let source = Arc::get_mut(&mut self.source).unwrap();
         //let sink = Arc::get_mut(&mut self.sink).unwrap();
+        let mut other_pipe_receiver = other_pipe_receiver.into_future().fuse();
         let mut read_buf: Vec<u8> = vec![0_u8; 4096];
         let mut packet_buf: Vec<u8> = Vec::with_capacity(4096);
         let mut write_buf: Vec<u8> = Vec::with_capacity(4096);
 
         loop {
             // Read from the source to read_buf, append to packet_buf
-            let n = self.source.read(&mut read_buf[..]).await?;
-            trace!(
-                "[{}:{:?}]: Read {} bytes from client",
-                self.name,
-                self.direction,
-                n
-            );
-            if n == 0 {
-                let e = Error::new(
-                    ErrorKind::Other,
-                    format!(
-                        "[{}:{:?}]: Read {} bytes, closing pipe.",
-                        self.name, self.direction, n
-                    ),
-                );
-                warn!("{}", e.to_string());
-                return Err(e);
-            }
-            trace!(
-                "[{}:{:?}]: {} bytes read from source",
-                self.name,
-                self.direction,
-                n
-            );
-            packet_buf.extend_from_slice(&read_buf[0..n]);
+            select! {
+                result = self.source.read(&mut read_buf[..]).fuse() => {
+                    match result {
+                        Ok(n) => {
+                            //let n = self.source.read(&mut read_buf[..]).await?;
+                            trace!(
+                                "[{}:{:?}]: Read {} bytes from client",
+                                self.name,
+                                self.direction,
+                                n,
+                            );
+                            if n == 0 {
+                                let e = Error::new(
+                                    ErrorKind::Other,
+                                    format!(
+                                        "[{}:{:?}]: Read {} bytes, closing pipe.",
+                                        self.name, self.direction, n
+                                    ),
+                                );
+                                warn!("{}", e.to_string());
+                                return Err(e);
+                            }
+                            trace!(
+                                "[{}:{:?}]: {} bytes read from source",
+                                self.name,
+                                self.direction,
+                                n
+                            );
+                            packet_buf.extend_from_slice(&read_buf[0..n]);
 
-            // Process all packets in packet_buf, put into write_buf
-            while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
-                trace!("[{}:{:?}]: Processing packet", self.name, self.direction);
-                {
-                    // Scope for self.packet_handler Mutex
-                    let mut h = self.packet_handler.lock().await;
-                    let transformed_packet: Packet = match self.direction {
-                        Direction::Forward => h.handle_request(&packet).await,
-                        Direction::Backward => h.handle_response(&packet).await,
+                            // Process all packets in packet_buf, put into write_buf
+                            while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
+                                trace!("[{}:{:?}]: Processing packet", self.name, self.direction);
+                                {
+                                    // Scope for self.packet_handler Mutex
+                                    let mut h = self.packet_handler.lock().await;
+                                    let transformed_packet: Packet = match self.direction {
+                                        Direction::Forward => h.handle_request(&packet).await,
+                                        Direction::Backward => h.handle_response(&packet).await,
+                                    };
+                                    write_buf.extend_from_slice(&transformed_packet.bytes);
+                                }
+                            } // end while
+
+                        },
+                        Err(e) => {
+                            warn!("[{}:{:?}]: Error reading from source", self.name, self.direction);
+                            return Err(e);
+                        },
+                    }; // end match
+                },
+                // Support short-circuit
+                (maybe_packet, recv) = other_pipe_receiver => {
+                    match maybe_packet {
+                        Some(p) => {
+                            trace!(
+                                "[{}:{:?}]: Got short circuit packet of {} bytes",
+                                self.name,
+                                self.direction,
+                                p.get_size(),
+                            );
+                            other_pipe_receiver = recv.into_future().fuse();
+                            write_buf.extend_from_slice(&p.bytes);
+                        },
+                        None => {
+                            let err_str = format!("[{}:{:?}]: other_pipe_receiver prematurely closed", self.name, self.direction);
+                            warn!("{}", err_str);
+                            return Err(Error::new(ErrorKind::Other,err_str));
+                        },
                     };
-                    write_buf.extend_from_slice(&transformed_packet.bytes);
-                }
-            }
+                },
+            } // end select!
+            
 
             // Write all to sink
             let n = self.sink.write(&write_buf[..]).await?;
