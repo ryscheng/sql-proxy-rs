@@ -95,16 +95,9 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                     }; // end match
                 },
                 // Support short-circuit
-                (maybe_packet, recv) = other_pipe_receiver => {
-                    if let Some(p) = maybe_packet {
-                        self.trace(format!("Got short circuit packet of {} bytes", p.get_size()));
-                        other_pipe_receiver = recv.into_future().fuse();
-                        write_buf.extend_from_slice(&p.bytes);
-                    } else {
-                        let e = self.create_error("other_pipe_receiver prematurely closed".to_string());
-                        warn!("{}", e.to_string());
-                        return Err(e);
-                    }
+                (packet, recv) = other_pipe_receiver => {
+                    self.process_short_circuit(packet, &mut write_buf)?;
+                    other_pipe_receiver = recv.into_future().fuse();
                 },
             } // end select!
             
@@ -116,6 +109,17 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         } // end loop
     } // end fn run
 
+    fn process_short_circuit(&self, packet: Option<Packet>, write_buf: &mut Vec<u8>) -> Result<()> {
+        if let Some(p) = packet {
+            self.trace(format!("Got short circuit packet of {} bytes", p.get_size()));
+            write_buf.extend_from_slice(&p.bytes);
+            Ok(())
+        } else {
+            let e = self.create_error("other_pipe_receiver prematurely closed".to_string());
+            warn!("{}", e.to_string());
+            Err(e)
+        }
+    }
 
     fn trace(&self, string: String) {
         trace!(
