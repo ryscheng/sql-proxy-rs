@@ -61,38 +61,9 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         loop {
             select! {
                 // Read from the source to read_buf, append to packet_buf
-                result = self.source.read(&mut read_buf[..]).fuse() => {
-                    match result {
-                        Ok(n) => {
-                            //let n = self.source.read(&mut read_buf[..]).await?;
-                            if n == 0 {
-                                let e = self.create_error(format!("Read {} bytes, closing pipe.", n));
-                                warn!("{}", e.to_string());
-                                return Err(e);
-                            }
-                            self.trace(format!("{} bytes read from source", n));
-                            packet_buf.extend_from_slice(&read_buf[0..n]);
-
-                            // Process all packets in packet_buf, put into write_buf
-                            while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
-                                self.trace("Processing packet".to_string());
-                                {
-                                    // Scope for self.packet_handler Mutex
-                                    let mut h = self.packet_handler.lock().await;
-                                    let transformed_packet: Packet = match self.direction {
-                                        Direction::Forward => h.handle_request(&packet).await,
-                                        Direction::Backward => h.handle_response(&packet).await,
-                                    };
-                                    write_buf.extend_from_slice(&transformed_packet.bytes);
-                                }
-                            } // end while
-
-                        },
-                        Err(e) => {
-                            warn!("[{}:{:?}]: Error reading from source", self.name, self.direction);
-                            return Err(e);
-                        },
-                    }; // end match
+                read_result = self.source.read(&mut read_buf[..]).fuse() => {
+                    //let n = self.source.read(&mut read_buf[..]).await?;
+                    self.process_read_buf(read_result, &read_buf, &mut packet_buf, &mut write_buf).await?;
                 },
                 // Support short-circuit
                 (packet, recv) = other_pipe_receiver => {
@@ -108,6 +79,38 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             self.trace(format!("{} bytes written to sink", n));
         } // end loop
     } // end fn run
+
+    async fn process_read_buf(&self, read_result: Result<usize>, read_buf: &Vec<u8>, mut packet_buf: &mut Vec<u8>, write_buf: &mut Vec<u8>) -> Result<()> {
+        if let Ok(n) = read_result {
+            if n == 0 {
+                let e = self.create_error(format!("Read {} bytes, closing pipe.", n));
+                warn!("{}", e.to_string());
+                return Err(e);
+            }
+            self.trace(format!("{} bytes read from source", n));
+            packet_buf.extend_from_slice(&read_buf[0..n]);
+
+            // Process all packets in packet_buf, put into write_buf
+            while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
+                self.trace("Processing packet".to_string());
+                {
+                    // Scope for self.packet_handler Mutex
+                    let mut h = self.packet_handler.lock().await;
+                    let transformed_packet: Packet = match self.direction {
+                        Direction::Forward => h.handle_request(&packet).await,
+                        Direction::Backward => h.handle_response(&packet).await,
+                    };
+                    write_buf.extend_from_slice(&transformed_packet.bytes);
+                }
+            } // end while
+            Ok(())
+        } else if let Err(e) = read_result {
+            warn!("[{}:{:?}]: Error reading from source", self.name, self.direction);
+            Err(e)
+        } else {
+            Err(Error::new(ErrorKind::Other, "This should never happen"))
+        }
+    }
 
     fn process_short_circuit(&self, packet: Option<Packet>, write_buf: &mut Vec<u8>) -> Result<()> {
         if let Some(p) = packet {
