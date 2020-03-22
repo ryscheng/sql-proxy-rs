@@ -86,7 +86,7 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
     async fn process_read_buf(
         &self,
         read_result: Result<usize>,
-        read_buf: &Vec<u8>,
+        read_buf: &[u8],
         mut packet_buf: &mut Vec<u8>,
         write_buf: &mut Vec<u8>,
         other_pipe_sender: &mut Sender<Packet>,
