@@ -1,11 +1,10 @@
 use byteorder::{BigEndian, ByteOrder};
 use futures::{
-    channel::mpsc::{Sender, Receiver},
+    channel::mpsc::{Receiver, Sender},
     lock::Mutex,
     select,
     sink::SinkExt,
-    FutureExt,
-    StreamExt,
+    FutureExt, StreamExt,
 };
 //use futures_util::{
 //    future::FutureExt,
@@ -50,7 +49,11 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         }
     }
 
-    pub async fn run(&mut self, mut other_pipe_sender: Sender<Packet>, other_pipe_receiver: Receiver<Packet>) -> Result<()> {
+    pub async fn run(
+        &mut self,
+        mut other_pipe_sender: Sender<Packet>,
+        other_pipe_receiver: Receiver<Packet>,
+    ) -> Result<()> {
         trace!("[{}]: Running {:?} pipe loop...", self.name, self.direction);
         //let source = Arc::get_mut(&mut self.source).unwrap();
         //let sink = Arc::get_mut(&mut self.sink).unwrap();
@@ -80,7 +83,14 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         } // end loop
     } // end fn run
 
-    async fn process_read_buf(&self, read_result: Result<usize>, read_buf: &Vec<u8>, mut packet_buf: &mut Vec<u8>, write_buf: &mut Vec<u8>, other_pipe_sender: &mut Sender<Packet>) -> Result<()> {
+    async fn process_read_buf(
+        &self,
+        read_result: Result<usize>,
+        read_buf: &Vec<u8>,
+        mut packet_buf: &mut Vec<u8>,
+        write_buf: &mut Vec<u8>,
+        other_pipe_sender: &mut Sender<Packet>,
+    ) -> Result<()> {
         if let Ok(n) = read_result {
             if n == 0 {
                 let e = self.create_error(format!("Read {} bytes, closing pipe.", n));
@@ -96,8 +106,13 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 // TODO: support SSL. For now, respond that we don't support SSL
                 // https://www.postgresql.org/docs/12/protocol-flow.html#id-1.10.5.7.11
                 if let Ok(PacketType::SSLRequest) = packet.get_packet_type() {
-                    if let Err(_e) = other_pipe_sender.send(Packet::new(self.db_type, String::from("N").into_bytes())).await {
-                        return Err(self.create_error("Error sending SSL response of no".to_string()));
+                    if let Err(_e) = other_pipe_sender
+                        .send(Packet::new(self.db_type, String::from("N").into_bytes()))
+                        .await
+                    {
+                        return Err(
+                            self.create_error("Error sending SSL response of no".to_string())
+                        );
                     }
                 } else {
                     let transformed_packet: Packet;
@@ -114,7 +129,10 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             } // end while
             Ok(())
         } else if let Err(e) = read_result {
-            warn!("[{}:{:?}]: Error reading from source", self.name, self.direction);
+            warn!(
+                "[{}:{:?}]: Error reading from source",
+                self.name, self.direction
+            );
             Err(e)
         } else {
             Err(Error::new(ErrorKind::Other, "This should never happen"))
@@ -123,7 +141,10 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
 
     fn process_short_circuit(&self, packet: Option<Packet>, write_buf: &mut Vec<u8>) -> Result<()> {
         if let Some(p) = packet {
-            self.trace(format!("Got short circuit packet of {} bytes", p.get_size()));
+            self.trace(format!(
+                "Got short circuit packet of {} bytes",
+                p.get_size()
+            ));
             write_buf.extend_from_slice(&p.bytes);
             Ok(())
         } else {
@@ -134,21 +155,13 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
     }
 
     fn trace(&self, string: String) {
-        trace!(
-            "[{}:{:?}]: {}",
-            self.name,
-            self.direction,
-            string
-        );
+        trace!("[{}:{:?}]: {}", self.name, self.direction, string);
     }
 
     fn create_error(&self, string: String) -> Error {
         Error::new(
             ErrorKind::Other,
-            format!(
-                "[{}:{:?}]: {}",
-                self.name, self.direction, string
-            ),
+            format!("[{}:{:?}]: {}", self.name, self.direction, string),
         )
     }
 } // end impl
