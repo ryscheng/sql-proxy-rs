@@ -1,5 +1,8 @@
 use byteorder::{BigEndian, ByteOrder};
-use futures::lock::Mutex;
+use futures::{
+    lock::Mutex,
+    channel::mpsc::{Sender, Receiver},
+};
 use std::{
     io::{Error, ErrorKind},
     sync::Arc,
@@ -18,6 +21,8 @@ pub struct Pipe<T: AsyncReadExt, U: AsyncWriteExt> {
     direction: Direction,
     source: T,
     sink: U,
+    other_pipe_sender: Sender<Packet>,
+    other_pipe_receiver: Receiver<Packet>,
 }
 
 impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
@@ -28,6 +33,8 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         direction: Direction,
         reader: T,
         writer: U,
+        other_pipe_sender: Sender<Packet>,
+        other_pipe_receiver: Receiver<Packet>,
     ) -> Pipe<T, U> {
         Pipe {
             name,
@@ -36,6 +43,8 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             direction,
             source: reader,
             sink: writer,
+            other_pipe_sender,
+            other_pipe_receiver,
         }
     }
 

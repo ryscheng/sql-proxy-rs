@@ -1,9 +1,15 @@
-use futures::{channel::oneshot, future::FutureExt, lock::Mutex, select, stream::StreamExt};
+use futures::{
+    channel::{mpsc, oneshot},
+    future::FutureExt,
+    lock::Mutex,
+    select,
+    stream::StreamExt,
+};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{
-    packet::DatabaseType,
+    packet::{DatabaseType, Packet},
     packet_handler::{Direction, PacketHandler},
     pipe::Pipe,
 };
@@ -44,11 +50,17 @@ impl Server {
                 "Server.create_pipes: Spawning new task to manage connection from {}",
                 client_addr
             );
-            let (client_reader, client_writer) = client_socket.split();
+            // Create new connections to the server for each client socket
             let mut server_socket = TcpStream::connect(db_addr.clone())
                 .await
                 .unwrap_or_else(|_| panic!("Connecting to SQL database ({}) failed", db_addr));
             let (server_reader, server_writer) = server_socket.split();
+            let (client_reader, client_writer) = client_socket.split();
+            // Create channels to short-circuit at the proxy
+            // - tx: use to send directly to other's sink
+            // - rx: receive and directly dump into sink
+            let (fb_tx, fb_rx) = mpsc::channel::<Packet>(128);
+            let (bf_tx, bf_rx) = mpsc::channel::<Packet>(128);
             let mut forward_pipe = Pipe::new(
                 client_addr.clone(),
                 db_type,
@@ -56,6 +68,8 @@ impl Server {
                 Direction::Forward,
                 client_reader,
                 server_writer,
+                fb_tx,
+                bf_rx,
             );
             let mut backward_pipe = Pipe::new(
                 client_addr.clone(),
@@ -64,8 +78,13 @@ impl Server {
                 Direction::Backward,
                 server_reader,
                 client_writer,
+                bf_tx,
+                fb_rx,
             );
             trace!("Server.create_pipes: starting forward/backwards pipes");
+            // select! will continuously run all futures until one returns
+            // - pipes are infinite loops, and never expect to exit unless error
+            // - any return will close this connection
             select! {
                 _ = forward_pipe.run().fuse() => {
                     trace!("Pipe closed via forward pipe");
