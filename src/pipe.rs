@@ -17,7 +17,7 @@ use std::{
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Result};
 
 use crate::{
-    packet::{DatabaseType, Packet, PacketType},
+    packet::{DatabaseType, Packet, PacketType, POSTGRES_IDS},
     packet_handler::{Direction, PacketHandler},
 };
 
@@ -77,9 +77,11 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             } // end select!
 
             // Write all to sink
-            let n = self.sink.write(&write_buf[..]).await?;
-            let _: Vec<u8> = write_buf.drain(0..n).collect();
-            self.trace(format!("{} bytes written to sink", n));
+            while write_buf.len() > 0 {
+                let n = self.sink.write(&write_buf[..]).await?;
+                let _: Vec<u8> = write_buf.drain(0..n).collect();
+                self.trace(format!("{} bytes written to sink", n));
+            }
         } // end loop
     } // end fn run
 
@@ -97,8 +99,8 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 warn!("{}", e.to_string());
                 return Err(e);
             }
-            self.trace(format!("{} bytes read from source", n));
             packet_buf.extend_from_slice(&read_buf[0..n]);
+            self.trace(format!("{} bytes read from source, {} bytes in packet_buf", n, packet_buf.len()));
 
             // Process all packets in packet_buf, put into write_buf
             while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
@@ -175,72 +177,59 @@ fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet>
     match db_type {
         DatabaseType::MariaDB => {
             // Check for header
-            if packet_buf.len() > 3 {
-                let l: usize = (((packet_buf[2] as u32) << 16)
-                    | ((packet_buf[1] as u32) << 8)
-                    | packet_buf[0] as u32) as usize;
-                let s = 4 + l;
-                // Check for entire packet size
-                if packet_buf.len() >= s {
-                    let p = Packet::new(DatabaseType::MariaDB, packet_buf.drain(0..s).collect());
-                    Some(p)
-                } else {
-                    None
-                }
-            } else {
-                None
+            if packet_buf.len() < 4 {
+                return None;
             }
-        }
+            let l: usize = (((packet_buf[2] as u32) << 16)
+                | ((packet_buf[1] as u32) << 8)
+                | packet_buf[0] as u32) as usize;
+            let s = 4 + l;
+            // Check for entire packet size
+            if packet_buf.len() < s {
+                return None;
+            }
+            Some(Packet::new(DatabaseType::MariaDB, packet_buf.drain(0..s).collect()))
+        } // end MariaDB
         DatabaseType::PostgresSQL => {
-            if packet_buf.len() > 5 {
-                let list = [
-                    'R', 'K', 'B', '2', '3', 'C', 'd', 'c', 'f', 'G', 'H', 'W', 'D', 'I', 'E', 'F',
-                    'V', 'p', 'v', 'n', 'N', 'A', 't', 'S', 'P', '1', 's', 'Q', 'Z', 'T', 'X',
-                ];
-                let id = packet_buf[0] as char;
-
-                if list.contains(&id) {
-                    let l = BigEndian::read_u32(&packet_buf[1..5]) as usize;
-                    let s = 1 + l;
-                    trace!(
-                        "get_packet(PostgresSQL): type={}, size={}, length={}",
-                        id,
-                        s,
-                        l
-                    );
-                    // Check for entire packet size
-                    if packet_buf.len() >= s {
-                        let p = Packet::new(
-                            DatabaseType::PostgresSQL,
-                            packet_buf.drain(0..s).collect(),
-                        );
-                        Some(p)
-                    } else {
-                        None
-                    }
-                } else {
-                    let l = BigEndian::read_u32(&packet_buf[0..4]) as usize;
-                    let s = l;
-                    trace!(
-                        "get_packet(PostgresSQL): firstbyte={:#04x}, size={}, length={}",
-                        packet_buf[0],
-                        s,
-                        l
-                    );
-                    // Check for entire packet size
-                    if packet_buf.len() >= s {
-                        let p = Packet::new(
-                            DatabaseType::PostgresSQL,
-                            packet_buf.drain(0..s).collect(),
-                        );
-                        Some(p)
-                    } else {
-                        None
-                    }
-                }
-            } else {
-                None
+            // Nothing in packet_buf
+            if packet_buf.len() < 1 {
+                trace!("get_packet(PostgresSQL): FAIL packet_buf(size={}) trying to read first byte", packet_buf.len());
+                return None;
             }
-        }
-    }
-}
+            let id = packet_buf[0] as char;
+            let mut size = 0;
+            if POSTGRES_IDS.contains(&id) {
+                size += 1;
+            }
+
+            // Check if I can read the length field
+            if packet_buf.len() < (size+4) {
+                trace!(
+                    "get_packet(PostgresSQL): FAIL packet_buf(size={}) trying to read length, firstbyte={:#04x}={}, size={}",
+                    packet_buf.len(), packet_buf[0], id, size+4
+                );
+                return None;
+            }
+            let length = BigEndian::read_u32(&packet_buf[size..(size+4)]) as usize; // read length
+            size += length;
+            
+            // Check if don't have entire packet
+            if packet_buf.len() < size {
+                trace!(
+                    "get_packet(PostgresSQL): FAIL packet_buf(size={}) too small, firstbyte={:#04x}={}, size={}, length={}",
+                    packet_buf.len(), packet_buf[0], id, size, length
+                );
+                return None;
+            }
+            trace!(
+                "get_packet(PostgresSQL): SUCCESS firstbyte={:#04x}={}, size={}, length={}",
+                packet_buf[0], id, size, length
+            );
+
+            Some(Packet::new(
+                DatabaseType::PostgresSQL,
+                packet_buf.drain(0..size).collect(),
+            ))
+        } // end PostgresSQL
+    } // end match
+} // end get_packet

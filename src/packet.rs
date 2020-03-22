@@ -291,6 +291,10 @@ pub enum DatabaseType {
     PostgresSQL,
 }
 
+pub const POSTGRES_IDS: [char; 31] = [
+    'R', 'K', 'B', '2', '3', 'C', 'd', 'c', 'f', 'G', 'H', 'W', 'D', 'I', 'E', 'F',
+    'V', 'p', 'v', 'n', 'N', 'A', 't', 'S', 'P', '1', 's', 'Q', 'Z', 'T', 'X',
+];
 #[derive(Copy, Clone, Debug)]
 pub enum PacketType {
     // MariaDB
