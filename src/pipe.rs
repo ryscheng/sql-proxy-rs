@@ -59,40 +59,23 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
         let mut write_buf: Vec<u8> = Vec::with_capacity(4096);
 
         loop {
-            // Read from the source to read_buf, append to packet_buf
             select! {
+                // Read from the source to read_buf, append to packet_buf
                 result = self.source.read(&mut read_buf[..]).fuse() => {
                     match result {
                         Ok(n) => {
                             //let n = self.source.read(&mut read_buf[..]).await?;
-                            trace!(
-                                "[{}:{:?}]: Read {} bytes from client",
-                                self.name,
-                                self.direction,
-                                n,
-                            );
                             if n == 0 {
-                                let e = Error::new(
-                                    ErrorKind::Other,
-                                    format!(
-                                        "[{}:{:?}]: Read {} bytes, closing pipe.",
-                                        self.name, self.direction, n
-                                    ),
-                                );
+                                let e = self.create_error(format!("Read {} bytes, closing pipe.", n));
                                 warn!("{}", e.to_string());
                                 return Err(e);
                             }
-                            trace!(
-                                "[{}:{:?}]: {} bytes read from source",
-                                self.name,
-                                self.direction,
-                                n
-                            );
+                            self.trace(format!("{} bytes read from source", n));
                             packet_buf.extend_from_slice(&read_buf[0..n]);
 
                             // Process all packets in packet_buf, put into write_buf
                             while let Some(packet) = get_packet(self.db_type, &mut packet_buf) {
-                                trace!("[{}:{:?}]: Processing packet", self.name, self.direction);
+                                self.trace("Processing packet".to_string());
                                 {
                                     // Scope for self.packet_handler Mutex
                                     let mut h = self.packet_handler.lock().await;
@@ -113,23 +96,15 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
                 },
                 // Support short-circuit
                 (maybe_packet, recv) = other_pipe_receiver => {
-                    match maybe_packet {
-                        Some(p) => {
-                            trace!(
-                                "[{}:{:?}]: Got short circuit packet of {} bytes",
-                                self.name,
-                                self.direction,
-                                p.get_size(),
-                            );
-                            other_pipe_receiver = recv.into_future().fuse();
-                            write_buf.extend_from_slice(&p.bytes);
-                        },
-                        None => {
-                            let err_str = format!("[{}:{:?}]: other_pipe_receiver prematurely closed", self.name, self.direction);
-                            warn!("{}", err_str);
-                            return Err(Error::new(ErrorKind::Other,err_str));
-                        },
-                    };
+                    if let Some(p) = maybe_packet {
+                        self.trace(format!("Got short circuit packet of {} bytes", p.get_size()));
+                        other_pipe_receiver = recv.into_future().fuse();
+                        write_buf.extend_from_slice(&p.bytes);
+                    } else {
+                        let e = self.create_error("other_pipe_receiver prematurely closed".to_string());
+                        warn!("{}", e.to_string());
+                        return Err(e);
+                    }
                 },
             } // end select!
             
@@ -137,14 +112,29 @@ impl<T: AsyncReadExt + Unpin, U: AsyncWriteExt + Unpin> Pipe<T, U> {
             // Write all to sink
             let n = self.sink.write(&write_buf[..]).await?;
             let _: Vec<u8> = write_buf.drain(0..n).collect();
-            trace!(
-                "[{}:{:?}]: {} bytes written to sink",
-                self.name,
-                self.direction,
-                n
-            );
+            self.trace(format!("{} bytes written to sink", n));
         } // end loop
     } // end fn run
+
+
+    fn trace(&self, string: String) {
+        trace!(
+            "[{}:{:?}]: {}",
+            self.name,
+            self.direction,
+            string
+        );
+    }
+
+    fn create_error(&self, string: String) -> Error {
+        Error::new(
+            ErrorKind::Other,
+            format!(
+                "[{}:{:?}]: {}",
+                self.name, self.direction, string
+            ),
+        )
+    }
 } // end impl
 
 fn get_packet(db_type: DatabaseType, packet_buf: &mut Vec<u8>) -> Option<Packet> {
