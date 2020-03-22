@@ -56,9 +56,6 @@ impl Server {
                 .unwrap_or_else(|_| panic!("Connecting to SQL database ({}) failed", db_addr));
             let (server_reader, server_writer) = server_socket.split();
             let (client_reader, client_writer) = client_socket.split();
-            // Create channels to short-circuit at the proxy
-            // - tx: use to send directly to other's sink
-            // - rx: receive and directly dump into sink
             let mut forward_pipe = Pipe::new(
                 client_addr.clone(),
                 db_type,
@@ -76,6 +73,9 @@ impl Server {
                 client_writer,
             );
 
+            // Create channels to short-circuit at the proxy
+            // - tx: use to send directly to other's sink
+            // - rx: receive and directly dump into sink
             let (fb_tx, fb_rx) = mpsc::channel::<Packet>(128);
             let (bf_tx, bf_rx) = mpsc::channel::<Packet>(128);
             trace!("Server.create_pipes: starting forward/backwards pipes");
