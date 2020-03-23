@@ -19,8 +19,3 @@ tokio = { version = "0.2", features = ["full"] }
 [dev-dependencies]
 mysql_async = "0.22"
 tokio-postgres = "0.5.3"
-
-[workspace]
-members = [
-  "autodapp",
-]
